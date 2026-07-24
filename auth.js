@@ -424,6 +424,7 @@ router.get('/referral-info', requireAuth, async (req, res) => {
 
 // REGISTER SHOP - a buyer submits NRC (front+back) + selfie to become a seller, pending admin approval.
 // Shop name is optional — if skipped, falls back to their account name everywhere it's displayed.
+// Works for both first-time applicants and people resubmitting after a rejection.
 router.post('/register-shop', requireAuth, async (req, res) => {
   const { shop_name, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url } = req.body;
 
@@ -434,7 +435,7 @@ router.post('/register-shop', requireAuth, async (req, res) => {
   try {
     await pool.query(
       `UPDATE pool6.users
-       SET account_type = 'shop', shop_name = $1, nrc_number = $2, nrc_photo_url = $3, nrc_back_photo_url = $4, selfie_photo_url = $5, shop_status = 'pending'
+       SET account_type = 'shop', shop_name = $1, nrc_number = $2, nrc_photo_url = $3, nrc_back_photo_url = $4, selfie_photo_url = $5, shop_status = 'pending', shop_rejection_reason = NULL
        WHERE id = $6`,
       [shop_name && shop_name.trim() ? shop_name.trim() : null, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url, req.userId]
     );
@@ -449,13 +450,14 @@ router.post('/register-shop', requireAuth, async (req, res) => {
 router.get('/shop-status', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT account_type, shop_status, shop_name FROM pool6.users WHERE id = $1',
+      'SELECT account_type, shop_status, shop_name, shop_rejection_reason FROM pool6.users WHERE id = $1',
       [req.userId]
     );
     res.json({
       account_type: result.rows[0]?.account_type || 'individual',
       shop_status: result.rows[0]?.shop_status || null,
       shop_name: result.rows[0]?.shop_name || null,
+      shop_rejection_reason: result.rows[0]?.shop_rejection_reason || null,
     });
   } catch (err) {
     console.error(err);
