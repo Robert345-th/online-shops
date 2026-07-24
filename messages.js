@@ -4,88 +4,6 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 
-const AUTO_REPLY_KEYWORDS = [
-  {
-    keywords: ['shop', 'register', 'sell', 'seller'],
-    tip: "To start selling, go to My Shop → Register My Shop, and submit your NRC (front & back) plus a selfie. It's usually reviewed within a day or two.",
-  },
-  {
-    keywords: ['payment', 'momo', 'pay', 'subscription', 'upgrade'],
-    tip: 'For payments, send the amount shown via MTN MoMo or Airtel Money to 0778727201, then submit your transaction reference in the app for review.',
-  },
-  {
-    keywords: ['boost'],
-    tip: "Boosting puts your listing at the top of the feed for 24 hours. Go to My Shop → pick a listing → Boost Listing to request one.",
-  },
-  {
-    keywords: ['delete', 'account', 'close'],
-    tip: 'You can delete your account anytime from Settings → Delete My Account. This is permanent.',
-  },
-  {
-    keywords: ['scam', 'fraud', 'report', 'block'],
-    tip: 'If someone is acting suspiciously, you can report them from Settings → Report a User, or block them directly in your chat with them.',
-  },
-  {
-    keywords: ['reject', 'rejected', 'denied'],
-    tip: "If your shop application was rejected, check My Shop for the reason given, fix the issue, and tap 'Try Again' to resubmit.",
-  },
-];
-
-function getAutoReplyTip(messageContent) {
-  if (!messageContent) return null;
-  const lower = messageContent.toLowerCase();
-  for (const entry of AUTO_REPLY_KEYWORDS) {
-    if (entry.keywords.some((kw) => lower.includes(kw))) {
-      return entry.tip;
-    }
-  }
-  return null;
-}
-
-async function maybeSendAutoReply(adminId, senderId) {
-  try {
-    // Don't auto-reply more than once every 24 hours to the same person,
-    // so it doesn't spam them if they send several messages in a row.
-    const recentReplyCheck = await pool.query(
-      `SELECT 1 FROM pool6.messages
-       WHERE sender_id = $1 AND receiver_id = $2
-       AND sent_at > NOW() - INTERVAL '24 hours'`,
-      [adminId, senderId]
-    );
-
-    if (recentReplyCheck.rows.length > 0) return;
-
-    const lastMessageResult = await pool.query(
-      `SELECT content FROM pool6.messages
-       WHERE sender_id = $1 AND receiver_id = $2
-       ORDER BY sent_at DESC LIMIT 1`,
-      [senderId, adminId]
-    );
-
-    const tip = getAutoReplyTip(lastMessageResult.rows[0]?.content);
-
-    let autoReplyText = "Thanks for reaching out! I'll get back to you personally as soon as I can.";
-    if (tip) {
-      autoReplyText += `\n\nIn the meantime: ${tip}`;
-    }
-
-    await pool.query(
-      `INSERT INTO pool6.messages (sender_id, receiver_id, content)
-       VALUES ($1, $2, $3)`,
-      [adminId, senderId, autoReplyText]
-    );
-
-    sendPushNotification(
-      senderId,
-      'Support',
-      autoReplyText.length > 60 ? autoReplyText.slice(0, 60) + '...' : autoReplyText,
-      { type: 'chat', otherUserId: adminId }
-    );
-  } catch (err) {
-    console.error('Auto-reply failed:', err);
-  }
-}
-
 // GET - list of conversations (grouped by other person)
 router.get('/conversations', requireAuth, async (req, res) => {
   try {
@@ -199,14 +117,6 @@ router.post('/', requireAuth, async (req, res) => {
       previewText && previewText.length > 60 ? previewText.slice(0, 60) + '...' : previewText,
       { type: 'chat', otherUserId: req.userId }
     );
-
-    // If this message was sent TO the support/admin account (and not FROM the admin themselves),
-    // send a quick automatic acknowledgment so people aren't left waiting with silence.
-    const adminCheck = await pool.query('SELECT id FROM pool6.users WHERE is_admin = true ORDER BY id ASC LIMIT 1');
-    const adminId = adminCheck.rows[0]?.id;
-    if (adminId && parseInt(receiver_id) === adminId && req.userId !== adminId) {
-      maybeSendAutoReply(adminId, req.userId);
-    }
 
     res.status(201).json(result.rows[0]);
   } catch (err) {
