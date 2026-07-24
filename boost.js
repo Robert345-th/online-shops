@@ -46,7 +46,10 @@ router.post('/:listingId', requireAuth, async (req, res) => {
       await pool.query('UPDATE pool6.users SET free_boost_credits = free_boost_credits - 1 WHERE id = $1', [req.userId]);
 
       const boostedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
-      await pool.query('UPDATE pool6.listings SET boosted_until = $1 WHERE id = $2', [boostedUntil, req.params.listingId]);
+      await pool.query(
+        'UPDATE pool6.listings SET boosted_until = $1, boost_expiry_notified = false WHERE id = $2',
+        [boostedUntil, req.params.listingId]
+      );
 
       return res.status(201).json({ success: true, usedCredit: true, boosted_until: boostedUntil });
     }
@@ -106,7 +109,7 @@ router.put('/:id/approve', requireAuth, requireAdmin, async (req, res) => {
     const boostedUntil = new Date(Date.now() + 24 * 60 * 60 * 1000);
 
     await pool.query(
-      `UPDATE pool6.listings SET boosted_until = $1 WHERE id = $2`,
+      `UPDATE pool6.listings SET boosted_until = $1, boost_expiry_notified = false WHERE id = $2`,
       [boostedUntil, boost.listing_id]
     );
 
