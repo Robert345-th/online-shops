@@ -10,9 +10,15 @@ function requiredSubCategory(categoryName) {
   return 'General';
 }
 
+// GET - public feed, paginated. Supports ?limit=20&offset=0 (defaults to 20/0).
+// Always shows boosted listings first, then newest first — this order works well with pagination.
 router.get('/', async (req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 20, 50);
+  const offset = parseInt(req.query.offset) || 0;
+
   try {
-    const result = await pool.query(`
+    const result = await pool.query(
+      `
       SELECT l.id, l.title, l.description, l.price, l.photos,
              l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
              l.boosted_until, l.seller_id,
@@ -37,7 +43,10 @@ router.get('/', async (req, res) => {
       ORDER BY
         CASE WHEN l.boosted_until IS NOT NULL AND l.boosted_until > NOW() THEN 0 ELSE 1 END,
         l.date_posted DESC
-    `);
+      LIMIT $1 OFFSET $2
+    `,
+      [limit, offset]
+    );
     res.json(result.rows);
   } catch (err) {
     console.error(err);
