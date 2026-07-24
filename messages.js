@@ -12,6 +12,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
          other_user_id,
          u.name AS other_user_name,
          m.content AS last_message,
+         m.photo_url AS last_photo_url,
          m.sent_at AS last_sent_at,
          m.sender_id,
          (SELECT COUNT(*) FROM pool6.messages
@@ -19,7 +20,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
        FROM (
          SELECT
            CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END AS other_user_id,
-           content, sent_at, sender_id
+           content, photo_url, sent_at, sender_id
          FROM pool6.messages
          WHERE sender_id = $1 OR receiver_id = $1
          ORDER BY sent_at DESC
@@ -42,7 +43,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
 router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, sender_id, receiver_id, content, sent_at, read_at
+      `SELECT id, sender_id, receiver_id, content, photo_url, sent_at, read_at
        FROM pool6.messages
        WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)
        ORDER BY sent_at ASC`,
@@ -73,12 +74,16 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   }
 });
 
-// POST - send a message
+// POST - send a message (text and/or a photo)
 router.post('/', requireAuth, async (req, res) => {
-  const { receiver_id, content, listing_id } = req.body;
+  const { receiver_id, content, photo_url, listing_id } = req.body;
 
-  if (!receiver_id || !content) {
-    return res.status(400).json({ error: 'Receiver and message content are required.' });
+  if (!receiver_id) {
+    return res.status(400).json({ error: 'Receiver is required.' });
+  }
+
+  if (!content && !photo_url) {
+    return res.status(400).json({ error: 'A message or photo is required.' });
   }
 
   try {
@@ -92,10 +97,10 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content)
-       VALUES ($1, $2, $3, $4)
+      `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content, photo_url)
+       VALUES ($1, $2, $3, $4, $5)
        RETURNING *`,
-      [req.userId, receiver_id, listing_id || null, content]
+      [req.userId, receiver_id, listing_id || null, content || null, photo_url || null]
     );
 
     const senderResult = await pool.query('SELECT name FROM pool6.users WHERE id = $1', [req.userId]);
@@ -104,7 +109,7 @@ router.post('/', requireAuth, async (req, res) => {
     sendPushNotification(
       receiver_id,
       `New message from ${senderName}`,
-      content.length > 60 ? content.slice(0, 60) + '...' : content,
+      photo_url ? '📷 Sent a photo' : (content.length > 60 ? content.slice(0, 60) + '...' : content),
       { type: 'chat', otherUserId: req.userId }
     );
 
