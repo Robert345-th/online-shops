@@ -13,6 +13,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
          u.name AS other_user_name,
          m.content AS last_message,
          m.photo_url AS last_photo_url,
+         m.audio_url AS last_audio_url,
          m.sent_at AS last_sent_at,
          m.sender_id,
          (SELECT COUNT(*) FROM pool6.messages
@@ -20,7 +21,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
        FROM (
          SELECT
            CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END AS other_user_id,
-           content, photo_url, sent_at, sender_id
+           content, photo_url, audio_url, sent_at, sender_id
          FROM pool6.messages
          WHERE sender_id = $1 OR receiver_id = $1
          ORDER BY sent_at DESC
@@ -43,7 +44,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
 router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, sender_id, receiver_id, content, photo_url, sent_at, read_at
+      `SELECT id, sender_id, receiver_id, content, photo_url, audio_url, audio_duration, sent_at, read_at
        FROM pool6.messages
        WHERE (sender_id = $1 AND receiver_id = $2) OR (sender_id = $2 AND receiver_id = $1)
        ORDER BY sent_at ASC`,
@@ -74,16 +75,16 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   }
 });
 
-// POST - send a message (text and/or a photo)
+// POST - send a message (text, and/or a photo, and/or a voice note)
 router.post('/', requireAuth, async (req, res) => {
-  const { receiver_id, content, photo_url, listing_id } = req.body;
+  const { receiver_id, content, photo_url, audio_url, audio_duration, listing_id } = req.body;
 
   if (!receiver_id) {
     return res.status(400).json({ error: 'Receiver is required.' });
   }
 
-  if (!content && !photo_url) {
-    return res.status(400).json({ error: 'A message or photo is required.' });
+  if (!content && !photo_url && !audio_url) {
+    return res.status(400).json({ error: 'A message, photo, or voice note is required.' });
   }
 
   try {
@@ -97,19 +98,23 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     const result = await pool.query(
-      `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content, photo_url)
-       VALUES ($1, $2, $3, $4, $5)
+      `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content, photo_url, audio_url, audio_duration)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.userId, receiver_id, listing_id || null, content || null, photo_url || null]
+      [req.userId, receiver_id, listing_id || null, content || null, photo_url || null, audio_url || null, audio_duration || null]
     );
 
     const senderResult = await pool.query('SELECT name FROM pool6.users WHERE id = $1', [req.userId]);
     const senderName = senderResult.rows[0]?.name || 'Someone';
 
+    let previewText = content;
+    if (photo_url) previewText = '📷 Sent a photo';
+    if (audio_url) previewText = '🎤 Sent a voice note';
+
     sendPushNotification(
       receiver_id,
       `New message from ${senderName}`,
-      photo_url ? '📷 Sent a photo' : (content.length > 60 ? content.slice(0, 60) + '...' : content),
+      previewText && previewText.length > 60 ? previewText.slice(0, 60) + '...' : previewText,
       { type: 'chat', otherUserId: req.userId }
     );
 
