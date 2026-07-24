@@ -143,8 +143,37 @@ async function sendDailyDigests() {
   }
 }
 
-// Schedule: every day at 09:00 (subscription reminders) and 18:00 (digests)
+// Runs once a day — auto-expires sale confirmation requests that have sat
+// unanswered for 3+ days, so they don't linger forever, and lets the seller know.
+async function expirePendingSaleConfirmations() {
+  try {
+    const result = await pool.query(
+      `UPDATE pool6.sale_confirmations
+       SET status = 'expired'
+       WHERE status = 'pending'
+       AND requested_at < NOW() - INTERVAL '3 days'
+       RETURNING id, listing_title, seller_id`
+    );
+
+    for (const confirmation of result.rows) {
+      sendPushNotification(
+        confirmation.seller_id,
+        'Confirmation Expired',
+        `The buyer never responded to confirm "${confirmation.listing_title}". It won't count toward your sold total.`
+      );
+    }
+
+    if (result.rows.length > 0) {
+      console.log(`Expired ${result.rows.length} sale confirmation(s).`);
+    }
+  } catch (err) {
+    console.error('Sale confirmation expiry job failed:', err);
+  }
+}
+
+// Schedule: every day at 09:00 (subscription reminders), 12:00 (expire old confirmations), and 18:00 (digests)
 cron.schedule('0 9 * * *', sendSubscriptionReminders);
+cron.schedule('0 12 * * *', expirePendingSaleConfirmations);
 cron.schedule('0 18 * * *', sendDailyDigests);
 
 const PORT = process.env.PORT || 3000;
