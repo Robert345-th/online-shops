@@ -83,7 +83,7 @@ router.put('/shop-applications/:id/approve', requireAuth, requireAdmin, async (r
       [req.params.id]
     );
 
-    await pool.query(`UPDATE pool6.users SET shop_status = 'approved' WHERE id = $1`, [req.params.id]);
+    await pool.query(`UPDATE pool6.users SET shop_status = 'approved', shop_rejection_reason = NULL WHERE id = $1`, [req.params.id]);
 
     sendPushNotification(
       req.params.id,
@@ -116,14 +116,19 @@ router.put('/shop-applications/:id/approve', requireAuth, requireAdmin, async (r
   }
 });
 
-// PUT - admin: reject a shop application
+// PUT - admin: reject a shop application, with a reason the seller will see
 router.put('/shop-applications/:id/reject', requireAuth, requireAdmin, async (req, res) => {
+  const { reason } = req.body;
+
   try {
-    await pool.query(`UPDATE pool6.users SET shop_status = 'rejected' WHERE id = $1`, [req.params.id]);
+    await pool.query(
+      `UPDATE pool6.users SET shop_status = 'rejected', shop_rejection_reason = $1 WHERE id = $2`,
+      [reason || 'No reason provided.', req.params.id]
+    );
     sendPushNotification(
       req.params.id,
       'Shop Application Declined',
-      'Your shop verification could not be approved. Please contact support for more information.'
+      reason ? `Your shop verification was not approved: ${reason}` : 'Your shop verification could not be approved. Please contact support for more information.'
     );
     res.json({ success: true });
   } catch (err) {
