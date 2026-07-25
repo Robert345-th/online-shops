@@ -45,6 +45,9 @@ app.use('/boost', boostRoutes);
 const saleConfirmationsRoutes = require('./sale-confirmations');
 app.use('/sale-confirmations', saleConfirmationsRoutes);
 
+const wantedRoutes = require('./wanted');
+app.use('/wanted', wantedRoutes);
+
 app.get('/', (req, res) => {
   res.send('Online Shops server is running.');
 });
@@ -171,10 +174,41 @@ async function expirePendingSaleConfirmations() {
   }
 }
 
-// Schedule: every day at 09:00 (subscription reminders), 12:00 (expire old confirmations), and 18:00 (digests)
+// Runs every hour — tells sellers when their listing's 24hr Boost has run out,
+// so they know it's no longer at the top of the feed.
+async function notifyExpiredBoosts() {
+  try {
+    const result = await pool.query(
+      `SELECT id, title, seller_id
+       FROM pool6.listings
+       WHERE boosted_until IS NOT NULL
+       AND boosted_until < NOW()
+       AND boost_expiry_notified = false`
+    );
+
+    for (const listing of result.rows) {
+      sendPushNotification(
+        listing.seller_id,
+        '🚀 Boost Ended',
+        `Your Boost for "${listing.title}" has ended. It's no longer pinned to the top of the feed.`
+      );
+
+      await pool.query('UPDATE pool6.listings SET boost_expiry_notified = true WHERE id = $1', [listing.id]);
+    }
+
+    if (result.rows.length > 0) {
+      console.log(`Notified ${result.rows.length} expired boost(s).`);
+    }
+  } catch (err) {
+    console.error('Boost expiry notification job failed:', err);
+  }
+}
+
+// Schedule: subscription reminders (9am), expire old confirmations (12pm), digests (6pm), boost expiry check (hourly)
 cron.schedule('0 9 * * *', sendSubscriptionReminders);
 cron.schedule('0 12 * * *', expirePendingSaleConfirmations);
 cron.schedule('0 18 * * *', sendDailyDigests);
+cron.schedule('0 * * * *', notifyExpiredBoosts);
 
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
