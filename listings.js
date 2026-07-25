@@ -10,8 +10,6 @@ function requiredSubCategory(categoryName) {
   return 'General';
 }
 
-// GET - public feed, paginated. Supports ?limit=20&offset=0 (defaults to 20/0).
-// Always shows boosted listings first, then newest first — this order works well with pagination.
 router.get('/', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   const offset = parseInt(req.query.offset) || 0;
@@ -19,7 +17,7 @@ router.get('/', async (req, res) => {
   try {
     const result = await pool.query(
       `
-      SELECT l.id, l.title, l.description, l.price, l.photos,
+      SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
              l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
              l.boosted_until, l.seller_id,
              c.name AS category,
@@ -69,7 +67,7 @@ router.get('/mine/all', requireAuth, async (req, res) => {
     const activeCategories = subResult.rows.map((r) => r.category);
 
     const result = await pool.query(
-      `SELECT l.id, l.title, l.description, l.price, l.photos,
+      `SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
               l.status, l.date_posted, l.location_label, l.category_id, l.boosted_until,
               c.name AS category
        FROM pool6.listings l
@@ -136,7 +134,7 @@ router.put('/reports/:reportId/dismiss', requireAuth, async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT l.id, l.title, l.description, l.price, l.photos,
+      `SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
               l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
               l.category_id, l.seller_id, l.boosted_until,
               c.name AS category,
@@ -195,13 +193,17 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   const {
-    title, description, price, category_id, photos,
+    title, description, price, category_id, photos, condition,
     latitude, longitude, location_label,
     car_details, land_details,
   } = req.body;
 
   if (!title || !price) {
     return res.status(400).json({ error: 'Title and price are required.' });
+  }
+
+  if (!condition || !['New', 'Pre-owned'].includes(condition)) {
+    return res.status(400).json({ error: 'Please select whether the item is New or Pre-owned.' });
   }
 
   try {
@@ -260,10 +262,10 @@ router.post('/', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO pool6.listings
-        (seller_id, title, description, price, category_id, photos, latitude, longitude, location_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+        (seller_id, title, description, price, category_id, photos, condition, latitude, longitude, location_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
        RETURNING *`,
-      [req.userId, title, description, price, category_id, photos || [], latitude, longitude, location_label]
+      [req.userId, title, description, price, category_id, photos || [], condition, latitude, longitude, location_label]
     );
 
     const listing = result.rows[0];
@@ -292,7 +294,11 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 router.put('/:id', requireAuth, async (req, res) => {
-  const { title, description, price, category_id, photos, car_details, land_details } = req.body;
+  const { title, description, price, category_id, photos, condition, car_details, land_details } = req.body;
+
+  if (!condition || !['New', 'Pre-owned'].includes(condition)) {
+    return res.status(400).json({ error: 'Please select whether the item is New or Pre-owned.' });
+  }
 
   try {
     const check = await pool.query(
@@ -313,10 +319,10 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `UPDATE pool6.listings
-       SET title = $1, description = $2, price = $3, category_id = $4, photos = $5
-       WHERE id = $6
+       SET title = $1, description = $2, price = $3, category_id = $4, photos = $5, condition = $6
+       WHERE id = $7
        RETURNING *`,
-      [title, description, price, category_id, photos || [], req.params.id]
+      [title, description, price, category_id, photos || [], condition, req.params.id]
     );
 
     if (car_details) {
