@@ -422,6 +422,35 @@ router.get('/referral-info', requireAuth, async (req, res) => {
   }
 });
 
+// GET - basic public info about a user, for showing in a chat header
+// (name, shop name/photo if they're a shop, and phone for the "view contact" option)
+router.get('/user-info/:id', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, phone, shop_name, shop_photo_url, account_type, is_admin
+       FROM pool6.users WHERE id = $1`,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const user = result.rows[0];
+    res.json({
+      id: user.id,
+      display_name: user.is_admin ? 'ZedMarket Support' : (user.shop_name || user.name),
+      shop_photo_url: user.shop_photo_url || null,
+      phone: user.phone,
+      is_shop: user.account_type === 'shop',
+      is_admin: user.is_admin,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load user info.' });
+  }
+});
+
 // REGISTER SHOP - a buyer submits NRC (front+back) + selfie to become a seller, pending admin approval.
 // Shop name is optional — if skipped, falls back to their account name everywhere it's displayed.
 // Works for both first-time applicants and people resubmitting after a rejection.
