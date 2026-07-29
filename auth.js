@@ -36,7 +36,7 @@ async function generateUniqueReferralCode() {
   let exists = true;
   while (exists) {
     code = generateReferralCodeCandidate();
-    const check = await pool.query('SELECT 1 FROM users WHERE referral_code = $1', [code]);
+    const check = await pool.query('SELECT 1 FROM pool6.users WHERE referral_code = $1', [code]);
     exists = check.rows.length > 0;
   }
   return code;
@@ -44,7 +44,7 @@ async function generateUniqueReferralCode() {
 
 async function checkOtpLimit(userId) {
   const result = await pool.query(
-    'SELECT otp_send_count, otp_window_start FROM users WHERE id = $1',
+    'SELECT otp_send_count, otp_window_start FROM pool6.users WHERE id = $1',
     [userId]
   );
   const user = result.rows[0];
@@ -54,7 +54,10 @@ async function checkOtpLimit(userId) {
   const windowExpired = !windowStart || (now.getTime() - windowStart.getTime()) > 24 * 60 * 60 * 1000;
 
   if (windowExpired) {
-    await pool.query('UPDATE users SET otp_send_count = 1, otp_window_start = NOW() WHERE id = $1', [userId]);
+    await pool.query(
+      'UPDATE pool6.users SET otp_send_count = 1, otp_window_start = NOW() WHERE id = $1',
+      [userId]
+    );
     return { allowed: true };
   }
 
@@ -63,11 +66,15 @@ async function checkOtpLimit(userId) {
     return { allowed: false, hoursLeft };
   }
 
-  await pool.query('UPDATE users SET otp_send_count = otp_send_count + 1 WHERE id = $1', [userId]);
+  await pool.query(
+    'UPDATE pool6.users SET otp_send_count = otp_send_count + 1 WHERE id = $1',
+    [userId]
+  );
   return { allowed: true };
 }
 
-// SIGNUP - name, phone, password, and optional referral code
+// SIGNUP - creates a buyer account, sends OTP, not verified yet (name, phone, password only)
+// Optionally accepts a referral_code from a friend who invited them
 router.post('/signup', async (req, res) => {
   const { name, phone, password, confirmPassword, referral_code } = req.body;
 
@@ -82,14 +89,20 @@ router.post('/signup', async (req, res) => {
   try {
     let referrerId = null;
     if (referral_code && referral_code.trim()) {
-      const referrerCheck = await pool.query('SELECT id FROM users WHERE referral_code = $1', [referral_code.trim().toUpperCase()]);
+      const referrerCheck = await pool.query(
+        'SELECT id FROM pool6.users WHERE referral_code = $1',
+        [referral_code.trim().toUpperCase()]
+      );
       if (referrerCheck.rows.length === 0) {
         return res.status(400).json({ error: 'That referral code was not found.' });
       }
       referrerId = referrerCheck.rows[0].id;
     }
 
-    const existing = await pool.query('SELECT id, phone_verified FROM users WHERE phone = $1', [phone]);
+    const existing = await pool.query(
+      'SELECT id, phone_verified FROM pool6.users WHERE phone = $1',
+      [phone]
+    );
 
     const password_hash = await bcrypt.hash(password, 10);
     const otp = generateOTP();
@@ -104,18 +117,23 @@ router.post('/signup', async (req, res) => {
 
       const limitCheck = await checkOtpLimit(existing.rows[0].id);
       if (!limitCheck.allowed) {
-        return res.status(429).json({ error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).` });
+        return res.status(429).json({
+          error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).`,
+        });
       }
 
       const updateResult = await pool.query(
-        `UPDATE users SET name = $1, password_hash = $2, otp_code = $3, otp_expires = $4, referred_by = $5 WHERE phone = $6 RETURNING id, name, phone`,
+        `UPDATE pool6.users
+         SET name = $1, password_hash = $2, otp_code = $3, otp_expires = $4, referred_by = $5
+         WHERE phone = $6
+         RETURNING id, name, phone`,
         [name, password_hash, otp, expires, referrerId, phone]
       );
       user = updateResult.rows[0];
     } else {
       const newReferralCode = await generateUniqueReferralCode();
       const insertResult = await pool.query(
-        `INSERT INTO users (name, phone, password_hash, otp_code, otp_expires, otp_send_count, otp_window_start, referral_code, referred_by)
+        `INSERT INTO pool6.users (name, phone, password_hash, otp_code, otp_expires, otp_send_count, otp_window_start, referral_code, referred_by)
          VALUES ($1, $2, $3, $4, $5, 1, NOW(), $6, $7) RETURNING id, name, phone`,
         [name, phone, password_hash, otp, expires, newReferralCode, referrerId]
       );
@@ -125,7 +143,7 @@ router.post('/signup', async (req, res) => {
     try {
       await smsService.send({
         to: [toIntlPhone(phone)],
-        message: `Your ZedEvents verification code is: ${otp}`,
+        message: `Your ZedMarket verification code is: ${otp}`,
       });
     } catch (smsErr) {
       console.error('SMS send failed:', smsErr);
@@ -147,7 +165,10 @@ router.post('/verify-otp', async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    const result = await pool.query(
+      'SELECT * FROM pool6.users WHERE phone = $1',
+      [phone]
+    );
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Account not found.' });
@@ -167,12 +188,15 @@ router.post('/verify-otp', async (req, res) => {
       return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
     }
 
-    await pool.query('UPDATE users SET phone_verified = true, otp_code = NULL, otp_expires = NULL WHERE id = $1', [user.id]);
+    await pool.query(
+      `UPDATE pool6.users SET phone_verified = true, otp_code = NULL, otp_expires = NULL WHERE id = $1`,
+      [user.id]
+    );
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
 
     res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, is_vendor: user.is_vendor },
+      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status },
       token,
     });
   } catch (err) {
@@ -186,7 +210,7 @@ router.post('/resend-otp', async (req, res) => {
   const { phone } = req.body;
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    const result = await pool.query('SELECT * FROM pool6.users WHERE phone = $1', [phone]);
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Account not found.' });
     }
@@ -195,17 +219,22 @@ router.post('/resend-otp', async (req, res) => {
 
     const limitCheck = await checkOtpLimit(user.id);
     if (!limitCheck.allowed) {
-      return res.status(429).json({ error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).` });
+      return res.status(429).json({
+        error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).`,
+      });
     }
 
     const otp = generateOTP();
     const expires = new Date(Date.now() + 10 * 60 * 1000);
 
-    await pool.query('UPDATE users SET otp_code = $1, otp_expires = $2 WHERE phone = $3', [otp, expires, phone]);
+    await pool.query(
+      'UPDATE pool6.users SET otp_code = $1, otp_expires = $2 WHERE phone = $3',
+      [otp, expires, phone]
+    );
 
     await smsService.send({
       to: [toIntlPhone(phone)],
-      message: `Your ZedEvents verification code is: ${otp}`,
+      message: `Your ZedMarket verification code is: ${otp}`,
     });
 
     res.json({ success: true });
@@ -215,7 +244,7 @@ router.post('/resend-otp', async (req, res) => {
   }
 });
 
-// FORGOT PASSWORD
+// FORGOT PASSWORD - send an OTP to reset password
 router.post('/forgot-password', async (req, res) => {
   const { phone } = req.body;
 
@@ -224,7 +253,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT id FROM users WHERE phone = $1', [phone]);
+    const result = await pool.query('SELECT id FROM pool6.users WHERE phone = $1', [phone]);
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'No account found with that phone number.' });
@@ -234,17 +263,22 @@ router.post('/forgot-password', async (req, res) => {
 
     const limitCheck = await checkOtpLimit(userId);
     if (!limitCheck.allowed) {
-      return res.status(429).json({ error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).` });
+      return res.status(429).json({
+        error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).`,
+      });
     }
 
     const otp = generateOTP();
     const expires = new Date(Date.now() + 10 * 60 * 1000);
 
-    await pool.query('UPDATE users SET otp_code = $1, otp_expires = $2 WHERE phone = $3', [otp, expires, phone]);
+    await pool.query(
+      'UPDATE pool6.users SET otp_code = $1, otp_expires = $2 WHERE phone = $3',
+      [otp, expires, phone]
+    );
 
     await smsService.send({
       to: [toIntlPhone(phone)],
-      message: `Your ZedEvents password reset code is: ${otp}`,
+      message: `Your ZedMarket password reset code is: ${otp}`,
     });
 
     res.json({ success: true });
@@ -254,7 +288,7 @@ router.post('/forgot-password', async (req, res) => {
   }
 });
 
-// RESET PASSWORD
+// RESET PASSWORD - verify OTP and set a new password
 router.post('/reset-password', async (req, res) => {
   const { phone, otp, newPassword, confirmNewPassword } = req.body;
 
@@ -267,7 +301,7 @@ router.post('/reset-password', async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    const result = await pool.query('SELECT * FROM pool6.users WHERE phone = $1', [phone]);
 
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Account not found.' });
@@ -285,7 +319,10 @@ router.post('/reset-password', async (req, res) => {
 
     const password_hash = await bcrypt.hash(newPassword, 10);
 
-    await pool.query('UPDATE users SET password_hash = $1, otp_code = NULL, otp_expires = NULL WHERE id = $2', [password_hash, user.id]);
+    await pool.query(
+      'UPDATE pool6.users SET password_hash = $1, otp_code = NULL, otp_expires = NULL WHERE id = $2',
+      [password_hash, user.id]
+    );
 
     res.json({ success: true, message: 'Password reset successfully. Please log in.' });
   } catch (err) {
@@ -303,7 +340,10 @@ router.post('/login', async (req, res) => {
   }
 
   try {
-    const result = await pool.query('SELECT * FROM users WHERE phone = $1', [phone]);
+    const result = await pool.query(
+      'SELECT * FROM pool6.users WHERE phone = $1',
+      [phone]
+    );
     if (result.rows.length === 0) {
       return res.status(400).json({ error: 'Phone number or password is incorrect.' });
     }
@@ -327,17 +367,18 @@ router.post('/login', async (req, res) => {
       return res.status(403).json({ error: 'Please verify your phone number first.', needsVerification: true });
     }
 
+    // Backfill: older accounts created before referral codes existed won't have one yet
     if (!user.referral_code) {
       const newCode = await generateUniqueReferralCode();
-      await pool.query('UPDATE users SET referral_code = $1 WHERE id = $2', [newCode, user.id]);
+      await pool.query('UPDATE pool6.users SET referral_code = $1 WHERE id = $2', [newCode, user.id]);
       user.referral_code = newCode;
     }
 
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
 
     res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, is_vendor: user.is_vendor },
-      token,
+      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status },
+      token
     });
   } catch (err) {
     console.error(err);
@@ -345,25 +386,35 @@ router.post('/login', async (req, res) => {
   }
 });
 
-// GET MY REFERRAL INFO
+// GET MY REFERRAL INFO - my code, how many people I've referred, and my free boost credits
 router.get('/referral-info', requireAuth, async (req, res) => {
   try {
-    const userResult = await pool.query('SELECT referral_code, free_featured_credits FROM users WHERE id = $1', [req.userId]);
+    const userResult = await pool.query(
+      'SELECT referral_code, free_boost_credits FROM pool6.users WHERE id = $1',
+      [req.userId]
+    );
 
     let referralCode = userResult.rows[0]?.referral_code;
     if (!referralCode) {
       referralCode = await generateUniqueReferralCode();
-      await pool.query('UPDATE users SET referral_code = $1 WHERE id = $2', [referralCode, req.userId]);
+      await pool.query('UPDATE pool6.users SET referral_code = $1 WHERE id = $2', [referralCode, req.userId]);
     }
 
-    const referralsResult = await pool.query('SELECT COUNT(*) FROM users WHERE referred_by = $1', [req.userId]);
-    const vendorReferralsResult = await pool.query('SELECT COUNT(*) FROM users WHERE referred_by = $1 AND is_vendor = true', [req.userId]);
+    const referralsResult = await pool.query(
+      'SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1',
+      [req.userId]
+    );
+
+    const approvedReferralsResult = await pool.query(
+      `SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1 AND shop_status = 'approved'`,
+      [req.userId]
+    );
 
     res.json({
       referral_code: referralCode,
       total_referrals: parseInt(referralsResult.rows[0].count),
-      vendor_referrals: parseInt(vendorReferralsResult.rows[0].count),
-      free_featured_credits: userResult.rows[0]?.free_featured_credits || 0,
+      approved_referrals: parseInt(approvedReferralsResult.rows[0].count),
+      free_boost_credits: userResult.rows[0]?.free_boost_credits || 0,
     });
   } catch (err) {
     console.error(err);
@@ -371,12 +422,13 @@ router.get('/referral-info', requireAuth, async (req, res) => {
   }
 });
 
-// GET - basic public info about a user, for showing in a chat header.
-// If this is the admin/support account, their real phone number is hidden for privacy.
+// GET - basic public info about a user, for showing in a chat header
+// (name, shop name/photo if they're a shop, and phone for the "view contact" option)
 router.get('/user-info/:id', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, is_vendor, business_name, business_photo_url, is_admin FROM users WHERE id = $1`,
+      `SELECT id, name, phone, shop_name, shop_photo_url, account_type, is_admin
+       FROM pool6.users WHERE id = $1`,
       [req.params.id]
     );
 
@@ -387,10 +439,10 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
     const user = result.rows[0];
     res.json({
       id: user.id,
-      display_name: user.is_admin ? 'ZedEvents Support' : (user.business_name || user.name),
-      business_photo_url: user.business_photo_url || null,
-      phone: user.is_admin ? null : user.phone,
-      is_vendor: user.is_vendor,
+      display_name: user.is_admin ? 'ZedMarket Support' : (user.shop_name || user.name),
+      shop_photo_url: user.shop_photo_url || null,
+      phone: user.phone,
+      is_shop: user.account_type === 'shop',
       is_admin: user.is_admin,
     });
   } catch (err) {
@@ -399,74 +451,95 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
   }
 });
 
-// POST - become a vendor
-router.post('/become-vendor', requireAuth, async (req, res) => {
-  const { business_name, business_bio, business_photo_url } = req.body;
+// REGISTER SHOP - a buyer submits NRC (front+back) + selfie to become a seller, pending admin approval.
+// Shop name is optional — if skipped, falls back to their account name everywhere it's displayed.
+// Works for both first-time applicants and people resubmitting after a rejection.
+router.post('/register-shop', requireAuth, async (req, res) => {
+  const { shop_name, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url } = req.body;
 
-  if (!business_name || !business_name.trim()) {
-    return res.status(400).json({ error: 'Business name is required.' });
+  if (!nrc_number || !nrc_photo_url || !nrc_back_photo_url || !selfie_photo_url) {
+    return res.status(400).json({ error: 'NRC number, both sides of your NRC, and a selfie are all required.' });
   }
 
   try {
     await pool.query(
-      `UPDATE users SET is_vendor = true, business_name = $1, business_bio = $2, business_photo_url = $3 WHERE id = $4`,
-      [business_name.trim(), business_bio || null, business_photo_url || null, req.userId]
+      `UPDATE pool6.users
+       SET account_type = 'shop', shop_name = $1, nrc_number = $2, nrc_photo_url = $3, nrc_back_photo_url = $4, selfie_photo_url = $5, shop_status = 'pending', shop_rejection_reason = NULL
+       WHERE id = $6`,
+      [shop_name && shop_name.trim() ? shop_name.trim() : null, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url, req.userId]
     );
-
-    const userResult = await pool.query('SELECT referred_by FROM users WHERE id = $1', [req.userId]);
-    const referredBy = userResult.rows[0]?.referred_by;
-
-    if (referredBy) {
-      await pool.query('UPDATE users SET free_featured_credits = free_featured_credits + 1 WHERE id = $1', [referredBy]);
-      await pool.query('UPDATE users SET free_featured_credits = free_featured_credits + 1 WHERE id = $1', [req.userId]);
-    }
-
-    res.json({ success: true });
+    res.json({ success: true, message: 'Shop registration submitted. You will be notified once approved.' });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Could not set up your vendor profile.' });
+    res.status(500).json({ error: 'Could not submit shop registration.' });
   }
 });
 
-// GET - my vendor profile
-router.get('/vendor-profile', requireAuth, async (req, res) => {
+// GET MY SHOP REGISTRATION STATUS
+router.get('/shop-status', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      'SELECT is_vendor, business_name, business_bio, business_photo_url FROM users WHERE id = $1',
+      'SELECT account_type, shop_status, shop_name, shop_rejection_reason FROM pool6.users WHERE id = $1',
+      [req.userId]
+    );
+    res.json({
+      account_type: result.rows[0]?.account_type || 'individual',
+      shop_status: result.rows[0]?.shop_status || null,
+      shop_name: result.rows[0]?.shop_name || null,
+      shop_rejection_reason: result.rows[0]?.shop_rejection_reason || null,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load shop status.' });
+  }
+});
+
+// GET MY FULL SHOP PROFILE (for the edit screen)
+router.get('/shop-profile', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT shop_name, shop_photo_url, shop_bio, pending_shop_name, shop_name_status
+       FROM pool6.users WHERE id = $1`,
       [req.userId]
     );
     res.json(result.rows[0] || {});
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Could not load vendor profile.' });
+    res.status(500).json({ error: 'Could not load shop profile.' });
   }
 });
 
-// PUT - update vendor profile
-router.put('/vendor-profile', requireAuth, async (req, res) => {
-  const { business_name, business_bio, business_photo_url } = req.body;
+// PUT - update shop profile. Photo and bio apply immediately. A new shop name goes to pending review.
+router.put('/shop-profile', requireAuth, async (req, res) => {
+  const { shop_photo_url, shop_bio, new_shop_name } = req.body;
 
   try {
-    if (business_name !== undefined) {
-      await pool.query('UPDATE users SET business_name = $1 WHERE id = $2', [business_name, req.userId]);
+    if (shop_photo_url !== undefined) {
+      await pool.query('UPDATE pool6.users SET shop_photo_url = $1 WHERE id = $2', [shop_photo_url, req.userId]);
     }
-    if (business_bio !== undefined) {
-      await pool.query('UPDATE users SET business_bio = $1 WHERE id = $2', [business_bio, req.userId]);
+
+    if (shop_bio !== undefined) {
+      await pool.query('UPDATE pool6.users SET shop_bio = $1 WHERE id = $2', [shop_bio, req.userId]);
     }
-    if (business_photo_url !== undefined) {
-      await pool.query('UPDATE users SET business_photo_url = $1 WHERE id = $2', [business_photo_url, req.userId]);
+
+    if (new_shop_name && new_shop_name.trim()) {
+      await pool.query(
+        `UPDATE pool6.users SET pending_shop_name = $1, shop_name_status = 'pending' WHERE id = $2`,
+        [new_shop_name.trim(), req.userId]
+      );
     }
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: 'Could not update vendor profile.' });
+    res.status(500).json({ error: 'Could not update shop profile.' });
   }
 });
 
 // GET MY DIGEST NOTIFICATION SETTING
 router.get('/digest-settings', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query('SELECT digest_enabled FROM users WHERE id = $1', [req.userId]);
+    const result = await pool.query('SELECT digest_enabled FROM pool6.users WHERE id = $1', [req.userId]);
     res.json({ digest_enabled: result.rows[0]?.digest_enabled !== false });
   } catch (err) {
     console.error(err);
@@ -479,7 +552,7 @@ router.put('/digest-settings', requireAuth, async (req, res) => {
   const { enabled } = req.body;
 
   try {
-    await pool.query('UPDATE users SET digest_enabled = $1 WHERE id = $2', [enabled, req.userId]);
+    await pool.query('UPDATE pool6.users SET digest_enabled = $1 WHERE id = $2', [enabled, req.userId]);
     res.json({ success: true });
   } catch (err) {
     console.error(err);
@@ -487,17 +560,27 @@ router.put('/digest-settings', requireAuth, async (req, res) => {
   }
 });
 
-// DELETE MY ACCOUNT
+// DELETE MY ACCOUNT - soft delete: anonymizes personal info but keeps reports/messages/reviews for safety investigations
 router.delete('/me', requireAuth, async (req, res) => {
   try {
     const anonymizedPhone = `deleted_${req.userId}_${Date.now()}`;
 
     await pool.query(
-      `UPDATE users SET name = 'Deleted User', phone = $1, password_hash = 'DELETED', push_token = NULL, is_deleted = true, deleted_at = NOW() WHERE id = $2`,
+      `UPDATE pool6.users
+       SET name = 'Deleted User',
+           phone = $1,
+           password_hash = 'DELETED',
+           push_token = NULL,
+           is_deleted = true,
+           deleted_at = NOW()
+       WHERE id = $2`,
       [anonymizedPhone, req.userId]
     );
 
-    await pool.query(`UPDATE services SET status = 'removed' WHERE vendor_id = $1`, [req.userId]);
+    await pool.query(
+      `UPDATE pool6.listings SET status = 'removed' WHERE seller_id = $1`,
+      [req.userId]
+    );
 
     res.json({ success: true, message: 'Your account has been deleted.' });
   } catch (err) {
