@@ -1,592 +1,844 @@
-const express = require('express');
-const bcrypt = require('bcrypt');
-const jwt = require('jsonwebtoken');
-const africastalking = require('africastalking');
-const router = express.Router();
-const pool = require('./db');
-const requireAuth = require('./middleware');
+import { useLocalSearchParams, useRouter, useFocusEffect } from 'expo-router';
+import React, { useCallback, useEffect, useRef, useState } from 'react';
+import {
+    ActivityIndicator,
+    Alert,
+    Dimensions,
+    Image,
+    KeyboardAvoidingView,
+    Linking,
+    Modal,
+    Platform,
+    ScrollView,
+    StatusBar,
+    StyleSheet,
+    Text,
+    TextInput,
+    TouchableOpacity,
+    View,
+} from 'react-native';
+import { SafeAreaView, useSafeAreaInsets } from 'react-native-safe-area-context';
+import * as ImagePicker from 'expo-image-picker';
+import { Audio } from 'expo-av';
+import { Ionicons } from '@expo/vector-icons';
+import { getToken, getUser } from '../../utils/auth';
 
-const JWT_SECRET = process.env.JWT_SECRET;
+const API_URL = 'https://zedevents-production.up.railway.app';
+const CLOUDINARY_URL = 'https://api.cloudinary.com/v1_1/kstg72vx/image/upload';
+const CLOUDINARY_AUDIO_URL = 'https://api.cloudinary.com/v1_1/kstg72vx/video/upload';
+const UPLOAD_PRESET = 'online_shops_uploads';
+const TOP_INSET = Platform.OS === 'android' ? (StatusBar.currentHeight || 24) : 0;
+const POLL_INTERVAL = 3000;
+const SCREEN_WIDTH = Dimensions.get('window').width;
+const SCREEN_HEIGHT = Dimensions.get('window').height;
 
-const AT = africastalking({
-  apiKey: process.env.AT_API_KEY,
-  username: process.env.AT_USERNAME,
-});
-const smsService = AT.SMS;
+const VENDOR_QUICK_REPLIES = [
+  '✅ Still available for that date',
+  '💰 Price is negotiable',
+  '📅 Fully booked, sorry',
+  '📸 I\'ll send more photos',
+];
 
-function generateOTP() {
-  return Math.floor(100000 + Math.random() * 900000).toString();
+const CUSTOMER_QUICK_REPLIES = [
+  '❓ Is this still available?',
+  '💰 Can you do a better price?',
+  '📦 What\'s included in this package?',
+  '📸 Can I see more photos?',
+];
+
+function formatDuration(seconds: number) {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  return `${mins}:${secs.toString().padStart(2, '0')}`;
 }
 
-function toIntlPhone(phone) {
-  return phone.startsWith('0') ? '+260' + phone.slice(1) : phone;
-}
+export default function ChatScreen() {
+  const { userId } = useLocalSearchParams();
+  const router = useRouter();
+  const insets = useSafeAreaInsets();
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [messageText, setMessageText] = useState('');
+  const [sending, setSending] = useState(false);
+  const [currentUser, setCurrentUser] = useState<any>(null);
+  const [otherUser, setOtherUser] = useState<any>(null);
+  const [iBlockedThem, setIBlockedThem] = useState(false);
+  const [theyBlockedMe, setTheyBlockedMe] = useState(false);
+  const [menuVisible, setMenuVisible] = useState(false);
+  const [blockActionLoading, setBlockActionLoading] = useState(false);
+  const [uploadingPhoto, setUploadingPhoto] = useState(false);
+  const [viewerVisible, setViewerVisible] = useState(false);
+  const [viewerUrl, setViewerUrl] = useState('');
+  const [recording, setRecording] = useState<Audio.Recording | null>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [recordingSeconds, setRecordingSeconds] = useState(0);
+  const [uploadingAudio, setUploadingAudio] = useState(false);
+  const [playingId, setPlayingId] = useState<number | null>(null);
+  const [messageActionsId, setMessageActionsId] = useState<number | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const recordingTimerRef = useRef<any>(null);
+  const scrollRef = useRef<ScrollView>(null);
+  const intervalRef = useRef<any>(null);
 
-function generateReferralCodeCandidate() {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
-  let code = '';
-  for (let i = 0; i < 6; i++) {
-    code += chars.charAt(Math.floor(Math.random() * chars.length));
-  }
-  return code;
-}
+  useEffect(() => {
+    getUser().then(setCurrentUser);
+    loadOtherUser();
+    return () => {
+      if (soundRef.current) soundRef.current.unloadAsync();
+    };
+  }, []);
 
-async function generateUniqueReferralCode() {
-  let code;
-  let exists = true;
-  while (exists) {
-    code = generateReferralCodeCandidate();
-    const check = await pool.query('SELECT 1 FROM pool6.users WHERE referral_code = $1', [code]);
-    exists = check.rows.length > 0;
-  }
-  return code;
-}
-
-async function checkOtpLimit(userId) {
-  const result = await pool.query(
-    'SELECT otp_send_count, otp_window_start FROM pool6.users WHERE id = $1',
-    [userId]
+  useFocusEffect(
+    useCallback(() => {
+      loadMessages(true);
+      intervalRef.current = setInterval(() => loadMessages(false), POLL_INTERVAL);
+      return () => clearInterval(intervalRef.current);
+    }, [userId])
   );
-  const user = result.rows[0];
-  const now = new Date();
 
-  const windowStart = user.otp_window_start ? new Date(user.otp_window_start) : null;
-  const windowExpired = !windowStart || (now.getTime() - windowStart.getTime()) > 24 * 60 * 60 * 1000;
+  const loadOtherUser = async () => {
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_URL}/auth/user-info/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      setOtherUser(data);
+    } catch (err) {}
+  };
 
-  if (windowExpired) {
-    await pool.query(
-      'UPDATE pool6.users SET otp_send_count = 1, otp_window_start = NOW() WHERE id = $1',
-      [userId]
-    );
-    return { allowed: true };
-  }
+  const loadMessages = async (showSpinner: boolean) => {
+    try {
+      if (showSpinner) setLoading(true);
+      const token = await getToken();
+      const response = await fetch(`${API_URL}/messages/conversation/${userId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
+      setMessages(data.messages || []);
+      setIBlockedThem(data.i_blocked_them || false);
+      setTheyBlockedMe(data.they_blocked_me || false);
+    } catch (err) {
+    } finally {
+      if (showSpinner) setLoading(false);
+    }
+  };
 
-  if (user.otp_send_count >= 2) {
-    const hoursLeft = Math.ceil((24 * 60 * 60 * 1000 - (now.getTime() - windowStart.getTime())) / (60 * 60 * 1000));
-    return { allowed: false, hoursLeft };
-  }
+  const sendMessagePayload = async (payload: { content?: string; photo_url?: string; audio_url?: string; audio_duration?: number }) => {
+    setSending(true);
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_URL}/messages`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${token}`,
+        },
+        body: JSON.stringify({ receiver_id: userId, ...payload }),
+      });
+      const data = await response.json();
 
-  await pool.query(
-    'UPDATE pool6.users SET otp_send_count = otp_send_count + 1 WHERE id = $1',
-    [userId]
-  );
-  return { allowed: true };
-}
-
-// SIGNUP - creates a buyer account, sends OTP, not verified yet (name, phone, password only)
-// Optionally accepts a referral_code from a friend who invited them
-router.post('/signup', async (req, res) => {
-  const { name, phone, password, confirmPassword, referral_code } = req.body;
-
-  if (!name || !phone || !password || !confirmPassword) {
-    return res.status(400).json({ error: 'All fields are required.' });
-  }
-
-  if (password !== confirmPassword) {
-    return res.status(400).json({ error: 'Passwords do not match.' });
-  }
-
-  try {
-    let referrerId = null;
-    if (referral_code && referral_code.trim()) {
-      const referrerCheck = await pool.query(
-        'SELECT id FROM pool6.users WHERE referral_code = $1',
-        [referral_code.trim().toUpperCase()]
-      );
-      if (referrerCheck.rows.length === 0) {
-        return res.status(400).json({ error: 'That referral code was not found.' });
+      if (!response.ok) {
+        Alert.alert('Error', data.error || 'Could not send message.');
+        return;
       }
-      referrerId = referrerCheck.rows[0].id;
+
+      loadMessages(false);
+      setTimeout(() => scrollRef.current?.scrollToEnd({ animated: true }), 200);
+    } catch (err) {
+    } finally {
+      setSending(false);
+    }
+  };
+
+  const handleSend = async () => {
+    if (!messageText.trim()) return;
+    const content = messageText;
+    setMessageText('');
+    await sendMessagePayload({ content });
+  };
+
+  const handleQuickReply = (text: string) => {
+    sendMessagePayload({ content: text });
+  };
+
+  const handlePickPhoto = async () => {
+    const { status } = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (status !== 'granted') {
+      Alert.alert('Permission needed', 'We need access to your photos to send this.');
+      return;
     }
 
-    const existing = await pool.query(
-      'SELECT id, phone_verified FROM pool6.users WHERE phone = $1',
-      [phone]
-    );
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ImagePicker.MediaTypeOptions.Images,
+      quality: 0.6,
+    });
 
-    const password_hash = await bcrypt.hash(password, 10);
-    const otp = generateOTP();
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
+    if (result.canceled || !result.assets?.[0]) return;
 
-    let user;
+    setUploadingPhoto(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', {
+        uri: result.assets[0].uri,
+        type: 'image/jpeg',
+        name: `chat_${Date.now()}.jpg`,
+      } as any);
+      formData.append('upload_preset', UPLOAD_PRESET);
 
-    if (existing.rows.length > 0) {
-      if (existing.rows[0].phone_verified) {
-        return res.status(400).json({ error: 'This phone number is already registered.' });
+      const response = await fetch(CLOUDINARY_URL, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      const data = await response.json();
+
+      if (!data.secure_url) {
+        Alert.alert('Upload failed', 'Could not upload the photo. Please try again.');
+        return;
       }
 
-      const limitCheck = await checkOtpLimit(existing.rows[0].id);
-      if (!limitCheck.allowed) {
-        return res.status(429).json({
-          error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).`,
-        });
-      }
-
-      const updateResult = await pool.query(
-        `UPDATE pool6.users
-         SET name = $1, password_hash = $2, otp_code = $3, otp_expires = $4, referred_by = $5
-         WHERE phone = $6
-         RETURNING id, name, phone`,
-        [name, password_hash, otp, expires, referrerId, phone]
-      );
-      user = updateResult.rows[0];
-    } else {
-      const newReferralCode = await generateUniqueReferralCode();
-      const insertResult = await pool.query(
-        `INSERT INTO pool6.users (name, phone, password_hash, otp_code, otp_expires, otp_send_count, otp_window_start, referral_code, referred_by)
-         VALUES ($1, $2, $3, $4, $5, 1, NOW(), $6, $7) RETURNING id, name, phone`,
-        [name, phone, password_hash, otp, expires, newReferralCode, referrerId]
-      );
-      user = insertResult.rows[0];
+      await sendMessagePayload({ photo_url: data.secure_url });
+    } catch (err) {
+      Alert.alert('Error', 'Could not upload the photo.');
+    } finally {
+      setUploadingPhoto(false);
     }
+  };
+
+  const startRecording = async () => {
+    try {
+      const permission = await Audio.requestPermissionsAsync();
+      if (permission.status !== 'granted') {
+        Alert.alert('Permission needed', 'We need microphone access to record a voice note.');
+        return;
+      }
+
+      await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+
+      const { recording: newRecording } = await Audio.Recording.createAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
+      setRecording(newRecording);
+      setIsRecording(true);
+      setRecordingSeconds(0);
+
+      recordingTimerRef.current = setInterval(() => {
+        setRecordingSeconds((prev) => prev + 1);
+      }, 1000);
+    } catch (err) {
+      Alert.alert('Error', 'Could not start recording.');
+    }
+  };
+
+  const stopRecording = async () => {
+    if (!recording) return;
+
+    clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
 
     try {
-      await smsService.send({
-        to: [toIntlPhone(phone)],
-        message: `Your ZedMarket verification code is: ${otp}`,
+      await recording.stopAndUnloadAsync();
+      const uri = recording.getURI();
+      const duration = recordingSeconds;
+      setRecording(null);
+
+      if (!uri || duration < 1) return;
+
+      setUploadingAudio(true);
+      const formData = new FormData();
+      formData.append('file', { uri, type: 'audio/m4a', name: `voice_${Date.now()}.m4a` } as any);
+      formData.append('upload_preset', UPLOAD_PRESET);
+      formData.append('resource_type', 'video');
+
+      const response = await fetch(CLOUDINARY_AUDIO_URL, {
+        method: 'POST',
+        body: formData,
+        headers: { 'Content-Type': 'multipart/form-data' },
       });
-    } catch (smsErr) {
-      console.error('SMS send failed:', smsErr);
+      const data = await response.json();
+
+      if (!data.secure_url) {
+        Alert.alert('Upload failed', 'Could not upload the voice note. Please try again.');
+        return;
+      }
+
+      await sendMessagePayload({ audio_url: data.secure_url, audio_duration: duration });
+    } catch (err) {
+      Alert.alert('Error', 'Could not save the voice note.');
+    } finally {
+      setUploadingAudio(false);
+      setRecordingSeconds(0);
     }
+  };
 
-    res.status(201).json({ user, message: 'Account created. Please verify with the OTP sent to your phone.' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Something went wrong creating the account.' });
-  }
-});
-
-// VERIFY OTP
-router.post('/verify-otp', async (req, res) => {
-  const { phone, otp } = req.body;
-
-  if (!phone || !otp) {
-    return res.status(400).json({ error: 'Phone and OTP are required.' });
-  }
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM pool6.users WHERE phone = $1',
-      [phone]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Account not found.' });
+  const cancelRecording = async () => {
+    clearInterval(recordingTimerRef.current);
+    setIsRecording(false);
+    setRecordingSeconds(0);
+    if (recording) {
+      try {
+        await recording.stopAndUnloadAsync();
+      } catch (err) {}
+      setRecording(null);
     }
+  };
 
-    const user = result.rows[0];
+  const handlePlayAudio = async (messageId: number, audioUrl: string) => {
+    try {
+      if (playingId === messageId) {
+        if (soundRef.current) {
+          await soundRef.current.stopAsync();
+          await soundRef.current.unloadAsync();
+          soundRef.current = null;
+        }
+        setPlayingId(null);
+        return;
+      }
 
-    if (user.phone_verified) {
-      return res.status(400).json({ error: 'Phone already verified.' });
-    }
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
 
-    if (user.otp_code !== otp) {
-      return res.status(400).json({ error: 'Incorrect OTP.' });
-    }
+      const { sound } = await Audio.Sound.createAsync({ uri: audioUrl });
+      soundRef.current = sound;
+      setPlayingId(messageId);
 
-    if (new Date() > new Date(user.otp_expires)) {
-      return res.status(400).json({ error: 'OTP has expired. Please request a new one.' });
-    }
-
-    await pool.query(
-      `UPDATE pool6.users SET phone_verified = true, otp_code = NULL, otp_expires = NULL WHERE id = $1`,
-      [user.id]
-    );
-
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
-
-    res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status },
-      token,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not verify OTP.' });
-  }
-});
-
-// RESEND OTP
-router.post('/resend-otp', async (req, res) => {
-  const { phone } = req.body;
-
-  try {
-    const result = await pool.query('SELECT * FROM pool6.users WHERE phone = $1', [phone]);
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Account not found.' });
-    }
-
-    const user = result.rows[0];
-
-    const limitCheck = await checkOtpLimit(user.id);
-    if (!limitCheck.allowed) {
-      return res.status(429).json({
-        error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).`,
+      sound.setOnPlaybackStatusUpdate((status: any) => {
+        if (status.didJustFinish) setPlayingId(null);
       });
+
+      await sound.playAsync();
+    } catch (err) {
+      Alert.alert('Error', 'Could not play the voice note.');
     }
+  };
 
-    const otp = generateOTP();
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
+  const openViewer = (url: string) => {
+    setViewerUrl(url);
+    setViewerVisible(true);
+  };
 
-    await pool.query(
-      'UPDATE pool6.users SET otp_code = $1, otp_expires = $2 WHERE phone = $3',
-      [otp, expires, phone]
-    );
-
-    await smsService.send({
-      to: [toIntlPhone(phone)],
-      message: `Your ZedMarket verification code is: ${otp}`,
-    });
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not resend OTP.' });
-  }
-});
-
-// FORGOT PASSWORD - send an OTP to reset password
-router.post('/forgot-password', async (req, res) => {
-  const { phone } = req.body;
-
-  if (!phone) {
-    return res.status(400).json({ error: 'Phone number is required.' });
-  }
-
-  try {
-    const result = await pool.query('SELECT id FROM pool6.users WHERE phone = $1', [phone]);
-
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'No account found with that phone number.' });
-    }
-
-    const userId = result.rows[0].id;
-
-    const limitCheck = await checkOtpLimit(userId);
-    if (!limitCheck.allowed) {
-      return res.status(429).json({
-        error: `You've reached the code limit. Please try again in ${limitCheck.hoursLeft} hour(s).`,
+  const handleDeleteForMe = async (messageId: number) => {
+    setMessageActionsId(null);
+    try {
+      const token = await getToken();
+      await fetch(`${API_URL}/messages/${messageId}/delete-for-me`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
       });
+      setMessages((prev) => prev.filter((m) => m.id !== messageId));
+    } catch (err) {
+      Alert.alert('Error', 'Could not delete message.');
     }
+  };
 
-    const otp = generateOTP();
-    const expires = new Date(Date.now() + 10 * 60 * 1000);
+  const handleDeleteForEveryone = async (messageId: number) => {
+    setMessageActionsId(null);
+    try {
+      const token = await getToken();
+      const response = await fetch(`${API_URL}/messages/${messageId}/delete-for-everyone`, {
+        method: 'PUT',
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      const data = await response.json();
 
-    await pool.query(
-      'UPDATE pool6.users SET otp_code = $1, otp_expires = $2 WHERE phone = $3',
-      [otp, expires, phone]
-    );
+      if (!response.ok) {
+        Alert.alert('Cannot unsend', data.error || 'Could not unsend this message.');
+        return;
+      }
 
-    await smsService.send({
-      to: [toIntlPhone(phone)],
-      message: `Your ZedMarket password reset code is: ${otp}`,
-    });
+      loadMessages(false);
+    } catch (err) {
+      Alert.alert('Error', 'Could not unsend message.');
+    }
+  };
 
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not send reset code.' });
-  }
+  const handleBlockToggle = () => {
+    setMenuVisible(false);
+    if (iBlockedThem) {
+      Alert.alert('Unblock this user?', 'You will be able to message each other again.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Unblock',
+          onPress: async () => {
+            setBlockActionLoading(true);
+            try {
+              const token = await getToken();
+              const response = await fetch(`${API_URL}/messages/block/${userId}`, {
+                method: 'DELETE',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!response.ok) {
+                Alert.alert('Error', 'Could not unblock this user.');
+                return;
+              }
+              setIBlockedThem(false);
+              loadMessages(false);
+            } catch (err) {
+              Alert.alert('Error', 'Could not connect to the server.');
+            } finally {
+              setBlockActionLoading(false);
+            }
+          },
+        },
+      ]);
+    } else {
+      Alert.alert('Block this user?', 'They will no longer be able to message you.', [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Block',
+          style: 'destructive',
+          onPress: async () => {
+            setBlockActionLoading(true);
+            try {
+              const token = await getToken();
+              const response = await fetch(`${API_URL}/messages/block/${userId}`, {
+                method: 'POST',
+                headers: { Authorization: `Bearer ${token}` },
+              });
+              if (!response.ok) {
+                Alert.alert('Error', 'Could not block this user.');
+                return;
+              }
+              setIBlockedThem(true);
+              loadMessages(false);
+            } catch (err) {
+              Alert.alert('Error', 'Could not connect to the server.');
+            } finally {
+              setBlockActionLoading(false);
+            }
+          },
+        },
+      ]);
+    }
+  };
+
+  const handleReportUser = () => {
+    setMenuVisible(false);
+    router.push({ pathname: '/report-user', params: { phone: otherUser?.phone || '' } });
+  };
+
+  const handleViewContact = () => {
+    setMenuVisible(false);
+    if (!otherUser?.phone) return;
+    Alert.alert(otherUser.display_name, otherUser.phone, [
+      { text: 'Close', style: 'cancel' },
+      { text: 'Call', onPress: () => Linking.openURL(`tel:${otherUser.phone}`) },
+    ]);
+  };
+
+  const isBlocked = iBlockedThem || theyBlockedMe;
+  const quickReplies = currentUser?.is_vendor ? VENDOR_QUICK_REPLIES : CUSTOMER_QUICK_REPLIES;
+  const isSupportChat = otherUser?.is_admin === true;
+
+  return (
+    <KeyboardAvoidingView style={{ flex: 1 }} behavior={Platform.OS === 'ios' ? 'padding' : 'height'}>
+      <SafeAreaView style={[styles.container, { paddingTop: TOP_INSET }]} edges={['top', 'left', 'right']}>
+        <View style={styles.topBar}>
+          <TouchableOpacity style={styles.backButton} onPress={() => router.back()}>
+            <Text style={styles.backButtonText}>←</Text>
+          </TouchableOpacity>
+
+          <View style={styles.headerProfileRow}>
+            <View style={styles.headerAvatar}>
+              {otherUser?.business_photo_url ? (
+                <Image source={{ uri: otherUser.business_photo_url }} style={styles.headerAvatarImage} />
+              ) : (
+                <Text style={styles.headerAvatarText}>
+                  {otherUser?.display_name ? otherUser.display_name.charAt(0).toUpperCase() : '?'}
+                </Text>
+              )}
+            </View>
+            <Text style={styles.brand} numberOfLines={1}>{otherUser?.display_name || 'Chat'}</Text>
+          </View>
+
+          <TouchableOpacity style={styles.menuButton} onPress={() => setMenuVisible(true)} disabled={blockActionLoading}>
+            {blockActionLoading ? (
+              <ActivityIndicator color="#fff" size="small" />
+            ) : (
+              <Text style={styles.menuButtonText}>⋮</Text>
+            )}
+          </TouchableOpacity>
+        </View>
+
+        {theyBlockedMe && (
+          <View style={styles.blockedBanner}>
+            <Text style={styles.blockedBannerText}>This user has blocked you.</Text>
+          </View>
+        )}
+        {iBlockedThem && (
+          <View style={styles.blockedBanner}>
+            <Text style={styles.blockedBannerText}>You have blocked this user.</Text>
+          </View>
+        )}
+
+        {loading ? (
+          <View style={styles.centerBox}>
+            <ActivityIndicator size="large" color="#C2410C" />
+          </View>
+        ) : (
+          <ScrollView
+            ref={scrollRef}
+            contentContainerStyle={styles.messagesList}
+            onContentSizeChange={() => scrollRef.current?.scrollToEnd({ animated: false })}
+          >
+            {messages.length === 0 ? (
+              <Text style={styles.emptyText}>Say hello 👋</Text>
+            ) : (
+              messages.map((msg: any) => {
+                const isMine = currentUser && msg.sender_id === currentUser.id;
+
+                if (msg.deleted_for_everyone) {
+                  return (
+                    <View
+                      key={msg.id}
+                      style={[styles.bubbleRow, isMine ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}
+                    >
+                      <View style={[styles.bubble, styles.deletedBubble]}>
+                        <Text style={styles.deletedText}>🚫 This message was deleted</Text>
+                      </View>
+                    </View>
+                  );
+                }
+
+                return (
+                  <View
+                    key={msg.id}
+                    style={[styles.bubbleRow, isMine ? { justifyContent: 'flex-end' } : { justifyContent: 'flex-start' }]}
+                  >
+                    {!isMine && (
+                      <TouchableOpacity style={styles.dotsBtn} onPress={() => setMessageActionsId(msg.id)}>
+                        <Text style={styles.dotsBtnText}>⋮</Text>
+                      </TouchableOpacity>
+                    )}
+
+                    {msg.photo_url ? (
+                      <TouchableOpacity
+                        style={[styles.photoBubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}
+                        onPress={() => openViewer(msg.photo_url)}
+                        activeOpacity={0.9}
+                      >
+                        <Image source={{ uri: msg.photo_url }} style={styles.chatPhoto} resizeMode="cover" />
+                      </TouchableOpacity>
+                    ) : msg.audio_url ? (
+                      <TouchableOpacity
+                        style={[styles.audioBubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}
+                        onPress={() => handlePlayAudio(msg.id, msg.audio_url)}
+                      >
+                        <Text style={{ fontSize: 18 }}>{playingId === msg.id ? '⏸️' : '▶️'}</Text>
+                        <View style={styles.audioWave}>
+                          <View style={[styles.audioWaveBar, { backgroundColor: isMine ? '#fff' : '#5C5955' }]} />
+                        </View>
+                        <Text style={isMine ? styles.bubbleTextMine : styles.bubbleTextTheirs}>
+                          {formatDuration(msg.audio_duration || 0)}
+                        </Text>
+                      </TouchableOpacity>
+                    ) : (
+                      <View style={[styles.bubble, isMine ? styles.bubbleMine : styles.bubbleTheirs]}>
+                        <Text style={isMine ? styles.bubbleTextMine : styles.bubbleTextTheirs}>{msg.content}</Text>
+                      </View>
+                    )}
+
+                    {isMine && (
+                      <TouchableOpacity style={styles.dotsBtn} onPress={() => setMessageActionsId(msg.id)}>
+                        <Text style={styles.dotsBtnText}>⋮</Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                );
+              })
+            )}
+          </ScrollView>
+        )}
+
+        {!isBlocked && (
+          <>
+            {!isRecording && (
+              <ScrollView
+                horizontal
+                showsHorizontalScrollIndicator={false}
+                style={styles.quickReplyRow}
+                contentContainerStyle={styles.quickReplyContent}
+              >
+                {quickReplies.map((reply) => (
+                  <TouchableOpacity
+                    key={reply}
+                    style={styles.quickReplyChip}
+                    onPress={() => handleQuickReply(reply)}
+                    disabled={sending}
+                  >
+                    <Text style={styles.quickReplyText}>{reply}</Text>
+                  </TouchableOpacity>
+                ))}
+              </ScrollView>
+            )}
+
+            {isRecording ? (
+              <View style={[styles.recordingRow, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+                <View style={styles.recordingDot} />
+                <Text style={styles.recordingText}>Recording... {formatDuration(recordingSeconds)}</Text>
+                <TouchableOpacity style={styles.cancelRecordBtn} onPress={cancelRecording}>
+                  <Text style={styles.cancelRecordBtnText}>Cancel</Text>
+                </TouchableOpacity>
+                <TouchableOpacity style={styles.stopRecordBtn} onPress={stopRecording}>
+                  <Text style={styles.stopRecordBtnText}>Send</Text>
+                </TouchableOpacity>
+              </View>
+            ) : (
+              <View style={[styles.inputRow, { paddingBottom: Math.max(insets.bottom, 12) }]}>
+                <TouchableOpacity style={styles.photoBtn} onPress={handlePickPhoto} disabled={uploadingPhoto}>
+                  {uploadingPhoto ? (
+                    <ActivityIndicator color="#C2410C" size="small" />
+                  ) : (
+                    <Text style={{ fontSize: 20 }}>📷</Text>
+                  )}
+                </TouchableOpacity>
+                <TextInput
+                  style={styles.input}
+                  placeholder="Type a message..."
+                  value={messageText}
+                  onChangeText={setMessageText}
+                  multiline
+                />
+                {messageText.trim() ? (
+                  <TouchableOpacity style={styles.sendBtn} onPress={handleSend} disabled={sending}>
+                    {sending ? <ActivityIndicator color="#fff" size="small" /> : <Text style={styles.sendBtnText}>➤</Text>}
+                  </TouchableOpacity>
+                ) : (
+                  <TouchableOpacity style={styles.micBtn} onPress={startRecording} disabled={uploadingAudio}>
+                    {uploadingAudio ? (
+                      <ActivityIndicator color="#fff" size="small" />
+                    ) : (
+                      <Ionicons name="mic" size={22} color="#fff" />
+                    )}
+                  </TouchableOpacity>
+                )}
+              </View>
+            )}
+          </>
+        )}
+      </SafeAreaView>
+
+      <Modal visible={viewerVisible} transparent={false} animationType="fade">
+        <View style={styles.viewerContainer}>
+          <TouchableOpacity style={styles.viewerBackButton} onPress={() => setViewerVisible(false)}>
+            <Text style={styles.viewerBackButtonText}>←</Text>
+          </TouchableOpacity>
+          <Image source={{ uri: viewerUrl }} style={{ width: SCREEN_WIDTH, height: SCREEN_HEIGHT }} resizeMode="contain" />
+        </View>
+      </Modal>
+
+      <Modal visible={menuVisible} transparent animationType="fade">
+        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={() => setMenuVisible(false)}>
+          <View style={styles.menuBox}>
+            {!isSupportChat && (
+              <TouchableOpacity style={styles.menuRow} onPress={handleViewContact}>
+                <Text style={styles.menuRowText}>📞 View Contact Number</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.menuRow} onPress={handleReportUser}>
+              <Text style={styles.menuRowText}>🚩 Report User</Text>
+            </TouchableOpacity>
+            {!isSupportChat && (
+              <TouchableOpacity style={styles.menuRow} onPress={handleBlockToggle}>
+                <Text style={[styles.menuRowText, { color: '#DC2626' }]}>
+                  {iBlockedThem ? '✅ Unblock User' : '🚫 Block User'}
+                </Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.menuCancelBtn} onPress={() => setMenuVisible(false)}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+
+      <Modal visible={messageActionsId !== null} transparent animationType="fade">
+        <TouchableOpacity style={styles.menuOverlay} activeOpacity={1} onPress={() => setMessageActionsId(null)}>
+          <View style={styles.menuBox}>
+            {(() => {
+              const msg = messages.find((m) => m.id === messageActionsId);
+              const isMine = currentUser && msg?.sender_id === currentUser.id;
+              const canUnsend = isMine && msg && !msg.read_at;
+              return (
+                <>
+                  {canUnsend && (
+                    <TouchableOpacity style={styles.menuRow} onPress={() => handleDeleteForEveryone(messageActionsId!)}>
+                      <Text style={[styles.menuRowText, { color: '#DC2626' }]}>🗑️ Delete for Everyone</Text>
+                    </TouchableOpacity>
+                  )}
+                  <TouchableOpacity style={styles.menuRow} onPress={() => handleDeleteForMe(messageActionsId!)}>
+                    <Text style={styles.menuRowText}>🗑️ Delete for Me</Text>
+                  </TouchableOpacity>
+                </>
+              );
+            })()}
+            <TouchableOpacity style={styles.menuCancelBtn} onPress={() => setMessageActionsId(null)}>
+              <Text style={styles.menuCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </View>
+        </TouchableOpacity>
+      </Modal>
+    </KeyboardAvoidingView>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: { flex: 1, backgroundColor: '#F4F1EC' },
+  topBar: {
+    backgroundColor: '#C2410C',
+    padding: 16,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+  },
+  backButton: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center',
+  },
+  backButtonText: { color: '#fff', fontSize: 18 },
+  headerProfileRow: { flexDirection: 'row', alignItems: 'center', gap: 10, flex: 1 },
+  headerAvatar: {
+    width: 34, height: 34, borderRadius: 17,
+    backgroundColor: '#EA580C',
+    alignItems: 'center', justifyContent: 'center',
+    overflow: 'hidden',
+  },
+  headerAvatarImage: { width: '100%', height: '100%' },
+  headerAvatarText: { color: '#fff', fontWeight: '700', fontSize: 14 },
+  brand: { color: '#FFF3E8', fontSize: 15, fontWeight: '700', flex: 1 },
+  menuButton: {
+    width: 36, height: 36, borderRadius: 18,
+    backgroundColor: 'rgba(255,255,255,0.18)',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  menuButtonText: { color: '#fff', fontSize: 20, fontWeight: '700' },
+  blockedBanner: { backgroundColor: '#DC2626', padding: 8 },
+  blockedBannerText: { color: '#fff', fontSize: 11, textAlign: 'center', fontWeight: '600' },
+  centerBox: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  emptyText: { textAlign: 'center', color: '#5C5955', marginTop: 40 },
+  messagesList: { padding: 14, flexGrow: 1 },
+  bubbleRow: { flexDirection: 'row', marginBottom: 8, alignItems: 'flex-end', gap: 2 },
+  dotsBtn: { padding: 6 },
+  dotsBtnText: { fontSize: 16, color: '#5C5955', fontWeight: '700' },
+  bubble: { maxWidth: '75%', padding: 12, borderRadius: 16 },
+  bubbleMine: { backgroundColor: '#C2410C', borderBottomRightRadius: 4 },
+  bubbleTheirs: { backgroundColor: '#fff', borderWidth: 1, borderColor: '#E2E0DC', borderBottomLeftRadius: 4 },
+  bubbleTextMine: { color: '#fff', fontSize: 14 },
+  bubbleTextTheirs: { color: '#211D1A', fontSize: 14 },
+  deletedBubble: { backgroundColor: 'transparent', borderWidth: 1, borderColor: '#E2E0DC', borderStyle: 'dashed' },
+  deletedText: { color: '#5C5955', fontSize: 12, fontStyle: 'italic' },
+  photoBubble: { maxWidth: '65%', borderRadius: 16, overflow: 'hidden', padding: 3 },
+  chatPhoto: { width: 180, height: 180, borderRadius: 12, backgroundColor: '#FBEAD9' },
+  audioBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 16,
+    minWidth: 150,
+  },
+  audioWave: { flex: 1, height: 3, backgroundColor: 'rgba(0,0,0,0.15)', borderRadius: 2, overflow: 'hidden' },
+  audioWaveBar: { width: '100%', height: '100%' },
+  quickReplyRow: { flexGrow: 0, backgroundColor: '#F4F1EC' },
+  quickReplyContent: { paddingHorizontal: 12, paddingTop: 8, paddingBottom: 4, gap: 8 },
+  quickReplyChip: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E0DC',
+    borderRadius: 20,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+  },
+  quickReplyText: { fontSize: 12, color: '#211D1A', fontWeight: '600' },
+  inputRow: {
+    flexDirection: 'row',
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    gap: 8,
+    backgroundColor: '#F4F1EC',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E0DC',
+    alignItems: 'flex-end',
+  },
+  photoBtn: {
+    width: 44, height: 44, borderRadius: 22,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E0DC',
+    alignItems: 'center', justifyContent: 'center',
+  },
+  input: {
+    flex: 1,
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E0DC',
+    borderRadius: 20,
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    fontSize: 14,
+    maxHeight: 100,
+  },
+  sendBtn: {
+    backgroundColor: '#EA580C',
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  sendBtnText: { color: '#fff', fontSize: 18 },
+  micBtn: {
+    backgroundColor: '#2563EB',
+    width: 44, height: 44, borderRadius: 22,
+    alignItems: 'center', justifyContent: 'center',
+  },
+  recordingRow: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 10,
+    paddingHorizontal: 12,
+    paddingTop: 12,
+    backgroundColor: '#F4F1EC',
+    borderTopWidth: 1,
+    borderTopColor: '#E2E0DC',
+  },
+  recordingDot: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#DC2626' },
+  recordingText: { flex: 1, fontSize: 13, color: '#211D1A', fontWeight: '600' },
+  cancelRecordBtn: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E0DC',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 10,
+  },
+  cancelRecordBtnText: { color: '#5C5955', fontSize: 12, fontWeight: '600' },
+  stopRecordBtn: { backgroundColor: '#EA580C', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 10 },
+  stopRecordBtnText: { color: '#fff', fontSize: 12, fontWeight: '700' },
+  viewerContainer: { flex: 1, backgroundColor: '#000', alignItems: 'center', justifyContent: 'center' },
+  viewerBackButton: {
+    position: 'absolute',
+    top: 40,
+    left: 18,
+    zIndex: 10,
+    backgroundColor: '#C2410C',
+    width: 48,
+    height: 48,
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  viewerBackButtonText: { color: '#fff', fontSize: 24, fontWeight: '700' },
+  menuOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.5)', justifyContent: 'flex-end' },
+  menuBox: { backgroundColor: '#F4F1EC', borderTopLeftRadius: 20, borderTopRightRadius: 20, padding: 20 },
+  menuRow: {
+    backgroundColor: '#fff',
+    borderWidth: 1,
+    borderColor: '#E2E0DC',
+    borderRadius: 12,
+    padding: 16,
+    marginBottom: 8,
+  },
+  menuRowText: { fontSize: 15, fontWeight: '600', color: '#211D1A' },
+  menuCancelBtn: { padding: 14, alignItems: 'center', marginTop: 4 },
+  menuCancelText: { color: '#5C5955', fontWeight: '600', fontSize: 15 },
 });
-
-// RESET PASSWORD - verify OTP and set a new password
-router.post('/reset-password', async (req, res) => {
-  const { phone, otp, newPassword, confirmNewPassword } = req.body;
-
-  if (!phone || !otp || !newPassword || !confirmNewPassword) {
-    return res.status(400).json({ error: 'All fields are required.' });
-  }
-
-  if (newPassword !== confirmNewPassword) {
-    return res.status(400).json({ error: 'Passwords do not match.' });
-  }
-
-  try {
-    const result = await pool.query('SELECT * FROM pool6.users WHERE phone = $1', [phone]);
-
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Account not found.' });
-    }
-
-    const user = result.rows[0];
-
-    if (user.otp_code !== otp) {
-      return res.status(400).json({ error: 'Incorrect code.' });
-    }
-
-    if (new Date() > new Date(user.otp_expires)) {
-      return res.status(400).json({ error: 'Code has expired. Please request a new one.' });
-    }
-
-    const password_hash = await bcrypt.hash(newPassword, 10);
-
-    await pool.query(
-      'UPDATE pool6.users SET password_hash = $1, otp_code = NULL, otp_expires = NULL WHERE id = $2',
-      [password_hash, user.id]
-    );
-
-    res.json({ success: true, message: 'Password reset successfully. Please log in.' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not reset password.' });
-  }
-});
-
-// LOGIN
-router.post('/login', async (req, res) => {
-  const { phone, password } = req.body;
-
-  if (!phone || !password) {
-    return res.status(400).json({ error: 'Phone and password are required.' });
-  }
-
-  try {
-    const result = await pool.query(
-      'SELECT * FROM pool6.users WHERE phone = $1',
-      [phone]
-    );
-    if (result.rows.length === 0) {
-      return res.status(400).json({ error: 'Phone number or password is incorrect.' });
-    }
-
-    const user = result.rows[0];
-
-    if (user.is_deleted) {
-      return res.status(400).json({ error: 'Phone number or password is incorrect.' });
-    }
-
-    const match = await bcrypt.compare(password, user.password_hash);
-    if (!match) {
-      return res.status(400).json({ error: 'Phone number or password is incorrect.' });
-    }
-
-    if (user.is_suspended) {
-      return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
-    }
-
-    if (!user.phone_verified) {
-      return res.status(403).json({ error: 'Please verify your phone number first.', needsVerification: true });
-    }
-
-    // Backfill: older accounts created before referral codes existed won't have one yet
-    if (!user.referral_code) {
-      const newCode = await generateUniqueReferralCode();
-      await pool.query('UPDATE pool6.users SET referral_code = $1 WHERE id = $2', [newCode, user.id]);
-      user.referral_code = newCode;
-    }
-
-    const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
-
-    res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status },
-      token
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Something went wrong logging in.' });
-  }
-});
-
-// GET MY REFERRAL INFO - my code, how many people I've referred, and my free boost credits
-router.get('/referral-info', requireAuth, async (req, res) => {
-  try {
-    const userResult = await pool.query(
-      'SELECT referral_code, free_boost_credits FROM pool6.users WHERE id = $1',
-      [req.userId]
-    );
-
-    let referralCode = userResult.rows[0]?.referral_code;
-    if (!referralCode) {
-      referralCode = await generateUniqueReferralCode();
-      await pool.query('UPDATE pool6.users SET referral_code = $1 WHERE id = $2', [referralCode, req.userId]);
-    }
-
-    const referralsResult = await pool.query(
-      'SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1',
-      [req.userId]
-    );
-
-    const approvedReferralsResult = await pool.query(
-      `SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1 AND shop_status = 'approved'`,
-      [req.userId]
-    );
-
-    res.json({
-      referral_code: referralCode,
-      total_referrals: parseInt(referralsResult.rows[0].count),
-      approved_referrals: parseInt(approvedReferralsResult.rows[0].count),
-      free_boost_credits: userResult.rows[0]?.free_boost_credits || 0,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not load referral info.' });
-  }
-});
-
-// GET - basic public info about a user, for showing in a chat header
-// (name, shop name/photo if they're a shop, and phone for the "view contact" option)
-router.get('/user-info/:id', requireAuth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT id, name, phone, shop_name, shop_photo_url, account_type, is_admin
-       FROM pool6.users WHERE id = $1`,
-      [req.params.id]
-    );
-
-    if (result.rows.length === 0) {
-      return res.status(404).json({ error: 'User not found.' });
-    }
-
-    const user = result.rows[0];
-    res.json({
-      id: user.id,
-      display_name: user.is_admin ? 'ZedMarket Support' : (user.shop_name || user.name),
-      shop_photo_url: user.shop_photo_url || null,
-      phone: user.phone,
-      is_shop: user.account_type === 'shop',
-      is_admin: user.is_admin,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not load user info.' });
-  }
-});
-
-// REGISTER SHOP - a buyer submits NRC (front+back) + selfie to become a seller, pending admin approval.
-// Shop name is optional — if skipped, falls back to their account name everywhere it's displayed.
-// Works for both first-time applicants and people resubmitting after a rejection.
-router.post('/register-shop', requireAuth, async (req, res) => {
-  const { shop_name, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url } = req.body;
-
-  if (!nrc_number || !nrc_photo_url || !nrc_back_photo_url || !selfie_photo_url) {
-    return res.status(400).json({ error: 'NRC number, both sides of your NRC, and a selfie are all required.' });
-  }
-
-  try {
-    await pool.query(
-      `UPDATE pool6.users
-       SET account_type = 'shop', shop_name = $1, nrc_number = $2, nrc_photo_url = $3, nrc_back_photo_url = $4, selfie_photo_url = $5, shop_status = 'pending', shop_rejection_reason = NULL
-       WHERE id = $6`,
-      [shop_name && shop_name.trim() ? shop_name.trim() : null, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url, req.userId]
-    );
-    res.json({ success: true, message: 'Shop registration submitted. You will be notified once approved.' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not submit shop registration.' });
-  }
-});
-
-// GET MY SHOP REGISTRATION STATUS
-router.get('/shop-status', requireAuth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      'SELECT account_type, shop_status, shop_name, shop_rejection_reason FROM pool6.users WHERE id = $1',
-      [req.userId]
-    );
-    res.json({
-      account_type: result.rows[0]?.account_type || 'individual',
-      shop_status: result.rows[0]?.shop_status || null,
-      shop_name: result.rows[0]?.shop_name || null,
-      shop_rejection_reason: result.rows[0]?.shop_rejection_reason || null,
-    });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not load shop status.' });
-  }
-});
-
-// GET MY FULL SHOP PROFILE (for the edit screen)
-router.get('/shop-profile', requireAuth, async (req, res) => {
-  try {
-    const result = await pool.query(
-      `SELECT shop_name, shop_photo_url, shop_bio, pending_shop_name, shop_name_status
-       FROM pool6.users WHERE id = $1`,
-      [req.userId]
-    );
-    res.json(result.rows[0] || {});
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not load shop profile.' });
-  }
-});
-
-// PUT - update shop profile. Photo and bio apply immediately. A new shop name goes to pending review.
-router.put('/shop-profile', requireAuth, async (req, res) => {
-  const { shop_photo_url, shop_bio, new_shop_name } = req.body;
-
-  try {
-    if (shop_photo_url !== undefined) {
-      await pool.query('UPDATE pool6.users SET shop_photo_url = $1 WHERE id = $2', [shop_photo_url, req.userId]);
-    }
-
-    if (shop_bio !== undefined) {
-      await pool.query('UPDATE pool6.users SET shop_bio = $1 WHERE id = $2', [shop_bio, req.userId]);
-    }
-
-    if (new_shop_name && new_shop_name.trim()) {
-      await pool.query(
-        `UPDATE pool6.users SET pending_shop_name = $1, shop_name_status = 'pending' WHERE id = $2`,
-        [new_shop_name.trim(), req.userId]
-      );
-    }
-
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not update shop profile.' });
-  }
-});
-
-// GET MY DIGEST NOTIFICATION SETTING
-router.get('/digest-settings', requireAuth, async (req, res) => {
-  try {
-    const result = await pool.query('SELECT digest_enabled FROM pool6.users WHERE id = $1', [req.userId]);
-    res.json({ digest_enabled: result.rows[0]?.digest_enabled !== false });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not load digest settings.' });
-  }
-});
-
-// PUT - toggle digest notifications on/off
-router.put('/digest-settings', requireAuth, async (req, res) => {
-  const { enabled } = req.body;
-
-  try {
-    await pool.query('UPDATE pool6.users SET digest_enabled = $1 WHERE id = $2', [enabled, req.userId]);
-    res.json({ success: true });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not update digest settings.' });
-  }
-});
-
-// DELETE MY ACCOUNT - soft delete: anonymizes personal info but keeps reports/messages/reviews for safety investigations
-router.delete('/me', requireAuth, async (req, res) => {
-  try {
-    const anonymizedPhone = `deleted_${req.userId}_${Date.now()}`;
-
-    await pool.query(
-      `UPDATE pool6.users
-       SET name = 'Deleted User',
-           phone = $1,
-           password_hash = 'DELETED',
-           push_token = NULL,
-           is_deleted = true,
-           deleted_at = NOW()
-       WHERE id = $2`,
-      [anonymizedPhone, req.userId]
-    );
-
-    await pool.query(
-      `UPDATE pool6.listings SET status = 'removed' WHERE seller_id = $1`,
-      [req.userId]
-    );
-
-    res.json({ success: true, message: 'Your account has been deleted.' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not delete account.' });
-  }
-});
-
-module.exports = router;
