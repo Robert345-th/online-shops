@@ -43,8 +43,8 @@ function isShopStep1Approved(user) {
 
 async function getSellerCompliance(userId) {
   const result = await pool.query(
-    `SELECT account_type, shop_status, shop_rejection_reason,
-            city, province, location_label, shop_location_label,
+    `SELECT account_type, shop_status, shop_rejection_reason, shop_name,
+            city, province, location_label, shop_location_label, home_location_label,
             nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url,
             nrc_verified, nrc_status
      FROM pool6.users WHERE id = $1`,
@@ -63,7 +63,8 @@ async function getSellerCompliance(userId) {
   return {
     found: true,
     user,
-    canPost: isShopStep1Approved(user) && hasLocation(user) && (!nrcGraceExpired || isNrcVerified(user)),
+  // Location is collected at registration; do not block posting until NRC grace expires.
+  canPost: isShopStep1Approved(user) && (!nrcGraceExpired || isNrcVerified(user)),
     step1Approved: isShopStep1Approved(user),
     hasLocation: hasLocation(user),
     nrcGraceEnd,

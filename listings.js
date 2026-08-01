@@ -230,13 +230,6 @@ router.post('/', requireAuth, async (req, res) => {
       });
     }
 
-    if (!compliance.hasLocation) {
-      return res.status(403).json({
-        error: 'Your shop profile must include city, province, and location before posting.',
-        needsLocation: true,
-      });
-    }
-
     if (!compliance.canPost) {
       return res.status(403).json({
         error: compliance.nrcGraceExpired && !compliance.nrcVerified
