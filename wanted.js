@@ -2,6 +2,7 @@ const express = require('express');
 const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
+const { notifyMatchingSellers } = require('./wanted-alerts');
 
 // GET - public feed of open "wanted" posts
 router.get('/', async (req, res) => {
@@ -56,7 +57,21 @@ router.post('/', requireAuth, async (req, res) => {
        RETURNING *`,
       [req.userId, title.trim(), description || null, category_id || null, budget || null, location_label || null]
     );
-    res.status(201).json(result.rows[0]);
+
+    const categoryResult = category_id
+      ? await pool.query('SELECT name FROM pool6.categories WHERE id = $1', [category_id])
+      : { rows: [] };
+
+    const created = {
+      ...result.rows[0],
+      category: categoryResult.rows[0]?.name || null,
+    };
+
+    notifyMatchingSellers(created, req.userId).catch((err) => {
+      console.error('Wanted seller alerts failed:', err.message);
+    });
+
+    res.status(201).json(created);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not create wanted post.' });
