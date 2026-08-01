@@ -47,7 +47,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
 router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, sender_id, receiver_id, content, photo_url, audio_url, audio_duration,
+      `SELECT id, sender_id, receiver_id, listing_id, content, photo_url, audio_url, audio_duration,
               deleted_for_everyone, sent_at, read_at
        FROM pool6.messages
        WHERE ((sender_id = $1 AND receiver_id = $2 AND deleted_for_sender = false)
@@ -55,6 +55,20 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
        ORDER BY sent_at ASC`,
       [req.userId, req.params.otherUserId]
     );
+
+    const listingContextResult = await pool.query(
+      `SELECT l.id, l.title, l.price, l.photos, l.status
+       FROM pool6.messages m
+       JOIN pool6.listings l ON l.id = m.listing_id
+       WHERE ((m.sender_id = $1 AND m.receiver_id = $2) OR (m.sender_id = $2 AND m.receiver_id = $1))
+         AND m.listing_id IS NOT NULL
+         AND m.deleted_for_everyone = false
+       ORDER BY m.sent_at DESC
+       LIMIT 1`,
+      [req.userId, req.params.otherUserId]
+    );
+
+    const listingContext = listingContextResult.rows[0] || null;
 
     await pool.query(
       `UPDATE pool6.messages SET read_at = NOW()
@@ -71,6 +85,7 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
 
     res.json({
       messages: result.rows,
+      listing_context: listingContext,
       i_blocked_them: blockCheck.rows[0].i_blocked_them,
       they_blocked_me: blockCheck.rows[0].they_blocked_me,
     });
