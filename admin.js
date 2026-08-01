@@ -4,6 +4,7 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const requireAdmin = require('./requireAdmin');
 const { sendPushNotification } = require('./notifications');
+const { NRC_GRACE_DAYS } = require('./shop-verification');
 
 // GET - public: find the support/admin contact for chat
 router.get('/support-contact', async (req, res) => {
@@ -62,7 +63,9 @@ router.put('/users/:id/unsuspend', requireAuth, requireAdmin, async (req, res) =
 router.get('/shop-applications/pending', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, shop_name, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url, date_joined
+      `SELECT id, name, phone, shop_name, date_of_birth, city, province, selling_type,
+              shop_address, home_address, shop_location_label, home_location_label, location_label,
+              date_joined
        FROM pool6.users
        WHERE shop_status = 'pending'
        ORDER BY date_joined ASC`
@@ -88,7 +91,7 @@ router.put('/shop-applications/:id/approve', requireAuth, requireAdmin, async (r
     sendPushNotification(
       req.params.id,
       '✅ Shop Approved!',
-      'Your shop account has been verified. You can now start posting listings.'
+      'Your shop account has been verified. You can now post listings. Please submit your NRC and selfie within the safety period when prompted.'
     );
 
     const referredBy = userResult.rows[0]?.referred_by;
@@ -113,6 +116,136 @@ router.put('/shop-applications/:id/approve', requireAuth, requireAdmin, async (r
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not approve shop application.' });
+  }
+});
+
+// GET - admin: pending NRC verification submissions (step 1 already approved)
+router.get('/nrc-verifications/pending', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT id, name, phone, shop_name, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url,
+              city, province, location_label, date_joined
+       FROM pool6.users
+       WHERE account_type = 'shop'
+         AND shop_status = 'approved'
+         AND nrc_status = 'pending'
+         AND nrc_photo_url IS NOT NULL
+       ORDER BY date_joined ASC`
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load NRC verifications.' });
+  }
+});
+
+// PUT - admin: approve NRC verification
+router.put('/nrc-verifications/:id/approve', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE pool6.users
+       SET nrc_verified = TRUE, nrc_status = 'approved'
+       WHERE id = $1 AND account_type = 'shop' AND shop_status = 'approved'
+       RETURNING id`,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'NRC submission not found.' });
+    }
+
+    sendPushNotification(
+      req.params.id,
+      '✅ NRC Verified',
+      'Your identity documents have been approved. Your listings will stay visible on ZedMarket.'
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not approve NRC verification.' });
+  }
+});
+
+// PUT - admin: reject NRC verification
+router.put('/nrc-verifications/:id/reject', requireAuth, requireAdmin, async (req, res) => {
+  const { reason } = req.body;
+
+  try {
+    const result = await pool.query(
+      `UPDATE pool6.users
+       SET nrc_verified = FALSE, nrc_status = 'rejected'
+       WHERE id = $1 AND account_type = 'shop' AND shop_status = 'approved'
+       RETURNING id`,
+      [req.params.id]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'NRC submission not found.' });
+    }
+
+    sendPushNotification(
+      req.params.id,
+      'NRC Verification Declined',
+      reason
+        ? `Your NRC verification was not approved: ${reason}. Please resubmit clear photos.`
+        : 'Your NRC verification could not be approved. Please resubmit your documents.'
+    );
+
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not reject NRC verification.' });
+  }
+});
+
+// POST - start the 5-day NRC submission window for all shops (admin only)
+router.post('/announce-nrc-period', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    const existing = await pool.query('SELECT nrc_grace_period_end FROM pool6.app_settings WHERE id = 1');
+    if (existing.rows[0]?.nrc_grace_period_end) {
+      return res.status(400).json({ error: 'NRC grace period has already been announced.' });
+    }
+
+    const nrcGracePeriodEnd = new Date(Date.now() + NRC_GRACE_DAYS * 24 * 60 * 60 * 1000);
+
+    await pool.query(
+      'UPDATE pool6.app_settings SET nrc_grace_period_end = $1 WHERE id = 1',
+      [nrcGracePeriodEnd]
+    );
+
+    const shopsResult = await pool.query(
+      `SELECT id FROM pool6.users
+       WHERE account_type = 'shop' AND shop_status = 'approved'`
+    );
+
+    for (const shop of shopsResult.rows) {
+      sendPushNotification(
+        shop.id,
+        '📋 NRC Verification Required',
+        `All shops must submit NRC and a selfie within ${NRC_GRACE_DAYS} days. Open My Shop to submit yours.`
+      );
+    }
+
+    res.json({
+      success: true,
+      nrc_grace_period_end: nrcGracePeriodEnd,
+      notified: shopsResult.rows.length,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not announce NRC period.' });
+  }
+});
+
+// PUT - admin: reset NRC grace period (for testing)
+router.put('/undo-nrc-period', requireAuth, requireAdmin, async (req, res) => {
+  try {
+    await pool.query('UPDATE pool6.app_settings SET nrc_grace_period_end = NULL WHERE id = 1');
+    res.json({ success: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not reset NRC period.' });
   }
 });
 

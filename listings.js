@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
+const { getSellerCompliance, sellerListingsVisibleSql } = require('./shop-verification');
 
 function requiredSubCategory(categoryName) {
   if (categoryName === 'Cars') return 'Cars';
@@ -27,6 +28,7 @@ router.get('/', async (req, res) => {
       LEFT JOIN pool6.users u ON l.seller_id = u.id
       WHERE l.status = 'active'
       AND (u.is_suspended = false OR u.is_suspended IS NULL)
+      AND ${sellerListingsVisibleSql('u')}
       AND (
         (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1) IS NULL
         OR NOW() < (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1)
@@ -142,7 +144,8 @@ router.get('/:id', async (req, res) => {
        FROM pool6.listings l
        LEFT JOIN pool6.categories c ON l.category_id = c.id
        LEFT JOIN pool6.users u ON l.seller_id = u.id
-       WHERE l.id = $1`,
+       WHERE l.id = $1
+       AND ${sellerListingsVisibleSql('u')}`,
       [req.params.id]
     );
 
@@ -207,20 +210,40 @@ router.post('/', requireAuth, async (req, res) => {
   }
 
   try {
-    const userCheck = await pool.query(
-      'SELECT account_type, shop_status FROM pool6.users WHERE id = $1',
-      [req.userId]
-    );
-    const account = userCheck.rows[0];
+    const compliance = await getSellerCompliance(req.userId);
+    if (!compliance.found) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
 
-    if (account.account_type !== 'shop' || account.shop_status !== 'approved') {
+    if (!compliance.step1Approved) {
+      const account = compliance.user;
       let message = 'You need to register your shop before you can post listings.';
       if (account.shop_status === 'pending') {
         message = 'Your shop registration is still being reviewed. You will be notified once approved.';
       } else if (account.shop_status === 'rejected') {
         message = 'Your shop registration was not approved. Please contact support.';
       }
-      return res.status(403).json({ error: message, needsShopRegistration: true, shopStatus: account.shop_status });
+      return res.status(403).json({
+        error: message,
+        needsShopRegistration: true,
+        shopStatus: account.shop_status,
+      });
+    }
+
+    if (!compliance.hasLocation) {
+      return res.status(403).json({
+        error: 'Your shop profile must include city, province, and location before posting.',
+        needsLocation: true,
+      });
+    }
+
+    if (!compliance.canPost) {
+      return res.status(403).json({
+        error: compliance.nrcGraceExpired && !compliance.nrcVerified
+          ? 'Your NRC verification is required. Submit your documents or wait for admin approval.'
+          : 'You cannot post listings right now.',
+        needsNrcVerification: compliance.nrcGraceExpired && !compliance.nrcVerified,
+      });
     }
 
     const settingsResult = await pool.query('SELECT grace_period_end FROM pool6.app_settings WHERE id = 1');

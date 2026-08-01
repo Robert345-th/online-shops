@@ -5,6 +5,9 @@ const africastalking = require('africastalking');
 const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
+const {
+  getSellerCompliance,
+} = require('./shop-verification');
 const JWT_SECRET = process.env.JWT_SECRET;
 const AT = africastalking({
   apiKey: process.env.AT_API_KEY,
@@ -368,53 +371,146 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Could not load user info.' });
   }
 });
-// REGISTER SHOP - a buyer submits a shop name to become a seller, pending admin approval.
-// NRC/selfie verification is currently OPTIONAL while it's disabled — once you announce
-// the requirement later (via admin), these fields become mandatory again.
-// Works for both first-time applicants and people resubmitting after a rejection.
+// REGISTER SHOP (step 1) — basic shop details only. Admin must approve before posting.
+// NRC/selfie are submitted separately via POST /submit-nrc after step 1 is approved.
 router.post('/register-shop', requireAuth, async (req, res) => {
-  const { shop_name, nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url } = req.body;
+  const {
+    name,
+    date_of_birth,
+    city,
+    province,
+    selling_type,
+    shop_name,
+    shop_address,
+    home_address,
+    shop_location_label,
+    home_location_label,
+    location_label,
+  } = req.body;
+
+  if (!name || !String(name).trim()) {
+    return res.status(400).json({ error: 'Your name is required.' });
+  }
+  if (!city || !province) {
+    return res.status(400).json({ error: 'City and province are required.' });
+  }
+  if (!selling_type || !['shop', 'home', 'both'].includes(selling_type)) {
+    return res.status(400).json({ error: 'Please choose where you sell.' });
+  }
+  const resolvedLocation = (location_label || shop_location_label || home_location_label || '').trim();
+  if (!resolvedLocation) {
+    return res.status(400).json({ error: 'A shop or home location is required.' });
+  }
 
   try {
-    const settingsResult = await pool.query('SELECT nrc_grace_period_end FROM pool6.app_settings WHERE id = 1');
-    const nrcGracePeriodEnd = settingsResult.rows[0]?.nrc_grace_period_end;
-    const nrcRequired = nrcGracePeriodEnd && new Date() > new Date(nrcGracePeriodEnd);
-
-    if (nrcRequired && (!nrc_number || !nrc_photo_url || !nrc_back_photo_url || !selfie_photo_url)) {
-      return res.status(400).json({ error: 'NRC number, both sides of your NRC, and a selfie are all required.' });
-    }
-
     await pool.query(
       `UPDATE pool6.users
-       SET account_type = 'shop', shop_name = $1, nrc_number = $2, nrc_photo_url = $3, nrc_back_photo_url = $4, selfie_photo_url = $5, shop_status = 'pending', shop_rejection_reason = NULL
-       WHERE id = $6`,
+       SET name = $1,
+           date_of_birth = $2,
+           city = $3,
+           province = $4,
+           selling_type = $5,
+           shop_name = $6,
+           shop_address = $7,
+           home_address = $8,
+           shop_location_label = $9,
+           home_location_label = $10,
+           location_label = $11,
+           account_type = 'shop',
+           shop_status = 'pending',
+           shop_rejection_reason = NULL
+       WHERE id = $12`,
       [
-        shop_name && shop_name.trim() ? shop_name.trim() : null,
-        nrc_number || null,
-        nrc_photo_url || null,
-        nrc_back_photo_url || null,
-        selfie_photo_url || null,
+        String(name).trim(),
+        date_of_birth || null,
+        String(city).trim(),
+        String(province).trim(),
+        selling_type,
+        shop_name && String(shop_name).trim() ? String(shop_name).trim() : null,
+        shop_address && String(shop_address).trim() ? String(shop_address).trim() : null,
+        home_address && String(home_address).trim() ? String(home_address).trim() : null,
+        shop_location_label && String(shop_location_label).trim() ? String(shop_location_label).trim() : null,
+        home_location_label && String(home_location_label).trim() ? String(home_location_label).trim() : null,
+        resolvedLocation,
         req.userId,
       ]
     );
-    res.json({ success: true, message: 'Shop registration submitted. You will be notified once approved.' });
+    res.json({
+      success: true,
+      message: 'Shop registration submitted. An admin will review step 1 before you can post.',
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not submit shop registration.' });
   }
 });
+
+// SUBMIT NRC + selfie after step 1 is approved (within the 5-day safety window).
+router.post('/submit-nrc', requireAuth, async (req, res) => {
+  const { nrc_number, nrc_photo_url, nrc_back_photo_url, selfie_photo_url } = req.body;
+
+  if (!nrc_number || !nrc_photo_url || !nrc_back_photo_url || !selfie_photo_url) {
+    return res.status(400).json({ error: 'NRC number, both sides of your NRC, and a selfie are all required.' });
+  }
+
+  try {
+    const userResult = await pool.query(
+      'SELECT account_type, shop_status FROM pool6.users WHERE id = $1',
+      [req.userId]
+    );
+    const user = userResult.rows[0];
+    if (!user || user.account_type !== 'shop' || user.shop_status !== 'approved') {
+      return res.status(403).json({ error: 'Your shop must be approved before you can submit NRC verification.' });
+    }
+
+    await pool.query(
+      `UPDATE pool6.users
+       SET nrc_number = $1,
+           nrc_photo_url = $2,
+           nrc_back_photo_url = $3,
+           selfie_photo_url = $4,
+           nrc_status = 'pending',
+           nrc_verified = FALSE
+       WHERE id = $5`,
+      [
+        String(nrc_number).trim(),
+        nrc_photo_url,
+        nrc_back_photo_url,
+        selfie_photo_url,
+        req.userId,
+      ]
+    );
+
+    res.json({ success: true, message: 'Documents submitted. An admin will review your NRC verification.' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not submit NRC verification.' });
+  }
+});
+
 // GET MY SHOP REGISTRATION STATUS
 router.get('/shop-status', requireAuth, async (req, res) => {
   try {
-    const result = await pool.query(
-      'SELECT account_type, shop_status, shop_name, shop_rejection_reason FROM pool6.users WHERE id = $1',
-      [req.userId]
-    );
+    const compliance = await getSellerCompliance(req.userId);
+    if (!compliance.found) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+
+    const user = compliance.user;
     res.json({
-      account_type: result.rows[0]?.account_type || 'individual',
-      shop_status: result.rows[0]?.shop_status || null,
-      shop_name: result.rows[0]?.shop_name || null,
-      shop_rejection_reason: result.rows[0]?.shop_rejection_reason || null,
+      account_type: user.account_type || 'individual',
+      shop_status: user.shop_status || null,
+      shop_name: user.shop_name || null,
+      shop_rejection_reason: user.shop_rejection_reason || null,
+      has_location: compliance.hasLocation,
+      can_post: compliance.canPost,
+      nrc_grace_end: compliance.nrcGraceEnd,
+      nrc_grace_active: compliance.nrcGraceActive,
+      nrc_grace_expired: compliance.nrcGraceExpired,
+      nrc_submitted: compliance.nrcSubmitted,
+      nrc_verified: compliance.nrcVerified,
+      nrc_status: compliance.nrcStatus,
+      listings_public: compliance.listingsPublic,
     });
   } catch (err) {
     console.error(err);

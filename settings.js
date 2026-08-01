@@ -41,4 +41,26 @@ router.get('/plan-prices', async (req, res) => {
   }
 });
 
+// GET - public: current NRC verification enforcement status
+router.get('/nrc-status', async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT nrc_grace_period_end FROM pool6.app_settings WHERE id = 1'
+    );
+
+    const nrcGracePeriodEnd = result.rows[0]?.nrc_grace_period_end;
+    const active = !!nrcGracePeriodEnd;
+    const expired = active && new Date() > new Date(nrcGracePeriodEnd);
+
+    res.json({
+      active,
+      nrc_grace_period_end: nrcGracePeriodEnd,
+      expired,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load NRC status.' });
+  }
+});
+
 module.exports = router;
