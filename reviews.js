@@ -37,7 +37,7 @@ router.get('/seller/:sellerId', async (req, res) => {
 router.get('/seller/:sellerId/profile', async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, name, shop_name, account_type, total_sold, date_joined
+      `SELECT id, name, shop_name, account_type, total_sold, date_joined, nrc_verified
        FROM pool6.users WHERE id = $1`,
       [req.params.sellerId]
     );
@@ -72,6 +72,7 @@ router.get('/seller/:sellerId/profile', async (req, res) => {
       shop_name: seller.shop_name,
       display_name: seller.shop_name || seller.name,
       account_type: seller.account_type,
+      nrc_verified: seller.nrc_verified === true,
       total_sold: seller.total_sold || 0,
       active_listings: parseInt(activeListingsResult.rows[0].count),
       average_rating: avgResult.rows[0].average || 0,
