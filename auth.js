@@ -327,11 +327,11 @@ router.get('/referral-info', requireAuth, async (req, res) => {
       await pool.query('UPDATE pool6.users SET referral_code = $1 WHERE id = $2', [referralCode, req.userId]);
     }
     const referralsResult = await pool.query(
-      'SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1',
+      'SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1 AND phone_verified = true',
       [req.userId]
     );
     const approvedReferralsResult = await pool.query(
-      `SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1 AND shop_status = 'approved'`,
+      `SELECT COUNT(*) FROM pool6.users WHERE referred_by = $1 AND phone_verified = true AND shop_status = 'approved'`,
       [req.userId]
     );
     res.json({

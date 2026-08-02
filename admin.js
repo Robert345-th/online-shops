@@ -22,12 +22,14 @@ router.get('/support-contact', async (req, res) => {
   }
 });
 
-// GET - list all users (admin only)
+// GET - list verified users only (admin only)
 router.get('/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, account_type, is_suspended, date_joined
+      `SELECT id, name, phone, account_type, is_suspended, date_joined, phone_verified
        FROM pool6.users
+       WHERE phone_verified = true
+       AND (is_deleted = false OR is_deleted IS NULL)
        ORDER BY date_joined DESC`
     );
     res.json(result.rows);
