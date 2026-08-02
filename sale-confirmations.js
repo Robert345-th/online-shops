@@ -82,6 +82,40 @@ router.post('/', requireAuth, async (req, res) => {
   }
 });
 
+// GET - count of pending purchase confirmations (buyer)
+router.get('/pending-count', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT COUNT(*)::int AS count
+       FROM pool6.sale_confirmations
+       WHERE buyer_id = $1 AND status = 'pending'`,
+      [req.userId]
+    );
+    res.json({ count: result.rows[0]?.count || 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load confirmation count.' });
+  }
+});
+
+// GET - public sold history for a seller profile
+router.get('/seller/:sellerId/history', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT listing_title, confirmed_at
+       FROM pool6.sale_confirmations
+       WHERE seller_id = $1 AND status = 'confirmed'
+       ORDER BY confirmed_at DESC
+       LIMIT 30`,
+      [req.params.sellerId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load sold history.' });
+  }
+});
+
 // GET - pending confirmations waiting on me (as the buyer)
 router.get('/pending', requireAuth, async (req, res) => {
   try {

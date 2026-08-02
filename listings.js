@@ -25,7 +25,7 @@ router.get('/', async (req, res) => {
       `
       SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
              l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
-             l.boosted_until, l.seller_id,
+             l.boosted_until, l.seller_id, l.view_count,
              c.name AS category,
              u.name AS seller_name, u.shop_name,
              u.nrc_verified AS seller_nrc_verified
@@ -78,6 +78,7 @@ router.get('/mine/all', requireAuth, async (req, res) => {
     const result = await pool.query(
       `SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
               l.status, l.date_posted, l.location_label, l.category_id, l.boosted_until,
+              l.view_count,
               c.name AS category
        FROM pool6.listings l
        LEFT JOIN pool6.categories c ON l.category_id = c.id
@@ -140,12 +141,31 @@ router.put('/reports/:reportId/dismiss', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/:id/view', async (req, res) => {
+  try {
+    const result = await pool.query(
+      `UPDATE pool6.listings
+       SET view_count = COALESCE(view_count, 0) + 1
+       WHERE id = $1 AND status = 'active'
+       RETURNING view_count`,
+      [req.params.id]
+    );
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+    res.json({ view_count: result.rows[0].view_count });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not record view.' });
+  }
+});
+
 router.get('/:id', async (req, res) => {
   try {
     const result = await pool.query(
       `SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
               l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
-              l.category_id, l.seller_id, l.boosted_until,
+              l.category_id, l.seller_id, l.boosted_until, l.view_count,
               c.name AS category,
               u.name AS seller_name, u.phone AS seller_phone, u.account_type AS seller_account_type, u.shop_name,
               u.nrc_verified AS seller_nrc_verified
@@ -426,7 +446,6 @@ router.post('/:id/mark-sold', requireAuth, async (req, res) => {
     }
 
     await pool.query('DELETE FROM pool6.listings WHERE id = $1', [req.params.id]);
-    await pool.query('UPDATE pool6.users SET total_sold = total_sold + 1 WHERE id = $1', [req.userId]);
 
     res.json({ success: true });
   } catch (err) {

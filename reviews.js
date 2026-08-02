@@ -90,15 +90,17 @@ router.get('/seller/:sellerId/profile', async (req, res) => {
 router.get('/leaderboard', async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT u.id, u.name, u.account_type,
+      `SELECT u.id, u.name, u.shop_name, u.account_type,
               ROUND(AVG(r.rating), 1) AS average,
               COUNT(r.id) AS total
        FROM pool6.reviews r
        JOIN pool6.users u ON r.seller_id = u.id
-       WHERE u.is_deleted = false OR u.is_deleted IS NULL
-       GROUP BY u.id, u.name, u.account_type
+       WHERE (u.is_deleted = false OR u.is_deleted IS NULL)
+       AND (u.is_suspended = false OR u.is_suspended IS NULL)
+       GROUP BY u.id, u.name, u.shop_name, u.account_type
+       HAVING COUNT(r.id) >= 1
        ORDER BY average DESC, total DESC
-       LIMIT 20`
+       LIMIT 10`
     );
     res.json(result.rows);
   } catch (err) {
