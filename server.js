@@ -1,11 +1,13 @@
 require('dotenv').config();
 const express = require('express');
+const compression = require('compression');
 const cors = require('cors');
 const cron = require('node-cron');
 const pool = require('./db');
 const { sendPushNotification } = require('./notifications');
 
 const app = express();
+app.use(compression());
 app.use(cors());
 app.use(express.json());
 

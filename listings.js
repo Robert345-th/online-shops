@@ -14,8 +14,13 @@ function requiredSubCategory(categoryName) {
 router.get('/', async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 20, 50);
   const offset = parseInt(req.query.offset) || 0;
+  const sellerId = parseInt(req.query.seller_id, 10);
+  const filterBySeller = Number.isFinite(sellerId) && sellerId > 0;
 
   try {
+    const params = filterBySeller ? [limit, offset, sellerId] : [limit, offset];
+    const sellerClause = filterBySeller ? 'AND l.seller_id = $3' : '';
+
     const result = await pool.query(
       `
       SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
@@ -30,6 +35,7 @@ router.get('/', async (req, res) => {
       WHERE l.status = 'active'
       AND (u.is_suspended = false OR u.is_suspended IS NULL)
       AND ${sellerListingsVisibleSql('u')}
+      ${sellerClause}
       AND (
         (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1) IS NULL
         OR NOW() < (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1)
@@ -46,7 +52,7 @@ router.get('/', async (req, res) => {
         l.date_posted DESC
       LIMIT $1 OFFSET $2
     `,
-      [limit, offset]
+      params
     );
     res.json(result.rows);
   } catch (err) {

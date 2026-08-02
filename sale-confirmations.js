@@ -72,7 +72,7 @@ router.post('/', requireAuth, async (req, res) => {
       resolvedBuyerId,
       '✅ Confirm Your Purchase',
       `Did you buy "${listing_title}" from ${sellerName}? Please confirm in the app.`,
-      { type: 'sale_confirmation' }
+      { type: 'sale_confirmation', url: '/sale-confirmations.html' }
     );
 
     res.status(201).json(result.rows[0]);
