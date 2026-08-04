@@ -26,7 +26,7 @@ router.post('/save-token', requireAuth, async (req, res) => {
 
 // Helper function to send a push notification to a specific user
 // `data` is an optional object attached to the notification, used by the app to know where to navigate when tapped
-async function sendWebPushNotification(userId, title, body, url, tag) {
+async function sendWebPushNotification(userId, title, body, url, tag, type) {
   const secret = process.env.PUSH_WEBHOOK_SECRET;
   if (!secret) return;
 
@@ -44,6 +44,7 @@ async function sendWebPushNotification(userId, title, body, url, tag) {
         body,
         url: url || '/',
         tag: tag || `zedmarket-${userId}`,
+        type: type || undefined,
       }),
     });
   } catch (err) {
@@ -80,7 +81,7 @@ async function sendPushNotification(userId, title, body, data = {}) {
 
   const url = data.url || (data.type === 'wanted' ? '/wanted.html' : '/chat-list.html');
   const tag = data.tag || (data.type === 'wanted' ? `wanted-${data.wantedId || userId}` : `zedmarket-${userId}`);
-  await sendWebPushNotification(userId, title, body, url, tag);
+  await sendWebPushNotification(userId, title, body, url, tag, data.type);
 }
 
 module.exports = { router, sendPushNotification };

@@ -8,7 +8,9 @@ const { sendPushNotification } = require('./notifications');
 
 const app = express();
 app.use(compression());
-app.use(cors());
+app.use(cors({
+  exposedHeaders: ['X-Account-Suspended'],
+}));
 app.use(express.json());
 
 const authRoutes = require('./auth');

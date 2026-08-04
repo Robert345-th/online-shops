@@ -293,7 +293,8 @@ router.post('/login', async (req, res) => {
       return res.status(400).json({ error: 'Phone number or password is incorrect.' });
     }
     if (user.is_suspended) {
-      return res.status(403).json({ error: 'Your account has been suspended. Contact support.' });
+      res.set('X-Account-Suspended', '1');
+      return res.status(403).json({ error: 'Your account has been suspended. Contact support.', suspended: true });
     }
     if (!user.phone_verified) {
       return res.status(403).json({ error: 'Please verify your phone number first.', needsVerification: true });
@@ -345,6 +346,11 @@ router.get('/referral-info', requireAuth, async (req, res) => {
     res.status(500).json({ error: 'Could not load referral info.' });
   }
 });
+// GET - lightweight session check (used by the app to kick suspended users out instantly)
+router.get('/session', requireAuth, async (req, res) => {
+  res.json({ ok: true, userId: req.userId });
+});
+
 // GET - basic public info about a user, for showing in a chat header
 // (name, shop name/photo if they're a shop, and phone for the "view contact" option)
 router.get('/user-info/:id', requireAuth, async (req, res) => {

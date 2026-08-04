@@ -31,6 +31,7 @@ async function requireAuth(req, res, next) {
     }
 
     if (account.is_suspended) {
+      res.set('X-Account-Suspended', '1');
       return res.status(403).json({ error: 'Your account has been suspended. Contact support.', suspended: true });
     }
 

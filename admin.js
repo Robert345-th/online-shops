@@ -39,10 +39,23 @@ router.get('/users', requireAuth, requireAdmin, async (req, res) => {
   }
 });
 
-// PUT - suspend a user
+// PUT - suspend a user (forces logout on their device via push + next API call)
 router.put('/users/:id/suspend', requireAuth, requireAdmin, async (req, res) => {
   try {
-    await pool.query('UPDATE pool6.users SET is_suspended = true WHERE id = $1', [req.params.id]);
+    const userId = req.params.id;
+    await pool.query('UPDATE pool6.users SET is_suspended = true WHERE id = $1', [userId]);
+
+    // Tell their open app / PWA to clear the session immediately.
+    sendPushNotification(
+      userId,
+      'Account suspended',
+      'Your ZedMarket account has been suspended. Contact support.',
+      { type: 'force_logout', url: '/login.html?suspended=1', tag: `suspend-${userId}` }
+    ).catch(() => {});
+
+    // Stop further push delivery to this account.
+    await pool.query('UPDATE pool6.users SET push_token = NULL WHERE id = $1', [userId]);
+
     res.json({ success: true });
   } catch (err) {
     console.error(err);
