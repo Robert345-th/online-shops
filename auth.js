@@ -392,6 +392,7 @@ router.post('/register-shop', requireAuth, async (req, res) => {
     shop_location_label,
     home_location_label,
     location_label,
+    terms_accepted,
   } = req.body;
 
   if (!name || !String(name).trim()) {
@@ -406,6 +407,9 @@ router.post('/register-shop', requireAuth, async (req, res) => {
   const resolvedLocation = (location_label || shop_location_label || home_location_label || '').trim();
   if (!resolvedLocation) {
     return res.status(400).json({ error: 'A shop or home location is required.' });
+  }
+  if (!terms_accepted) {
+    return res.status(400).json({ error: 'You must accept the Terms & Conditions to register.' });
   }
 
   try {
@@ -424,7 +428,8 @@ router.post('/register-shop', requireAuth, async (req, res) => {
            location_label = $11,
            account_type = 'shop',
            shop_status = 'pending',
-           shop_rejection_reason = NULL
+           shop_rejection_reason = NULL,
+           terms_accepted_at = NOW()
        WHERE id = $12`,
       [
         String(name).trim(),
