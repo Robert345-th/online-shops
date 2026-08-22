@@ -67,12 +67,15 @@ async function checkOtpLimit(userId) {
 // SIGNUP - creates a buyer account, sends OTP, not verified yet (name, phone, password only)
 // Optionally accepts a referral_code from a friend who invited them
 router.post('/signup', async (req, res) => {
-  const { name, phone, password, confirmPassword, referral_code } = req.body;
+  const { name, phone, password, confirmPassword, referral_code, terms_accepted } = req.body;
   if (!name || !phone || !password || !confirmPassword) {
     return res.status(400).json({ error: 'All fields are required.' });
   }
   if (password !== confirmPassword) {
     return res.status(400).json({ error: 'Passwords do not match.' });
+  }
+  if (!terms_accepted) {
+    return res.status(400).json({ error: 'You must agree to the Terms & Conditions to sign up.' });
   }
   try {
     let referrerId = null;
@@ -106,7 +109,7 @@ router.post('/signup', async (req, res) => {
       }
       const updateResult = await pool.query(
         `UPDATE pool6.users
-         SET name = $1, password_hash = $2, otp_code = $3, otp_expires = $4, referred_by = $5
+         SET name = $1, password_hash = $2, otp_code = $3, otp_expires = $4, referred_by = $5, terms_accepted_at = NOW()
          WHERE phone = $6
          RETURNING id, name, phone`,
         [name, password_hash, otp, expires, referrerId, phone]
@@ -115,8 +118,8 @@ router.post('/signup', async (req, res) => {
     } else {
       const newReferralCode = await generateUniqueReferralCode();
       const insertResult = await pool.query(
-        `INSERT INTO pool6.users (name, phone, password_hash, otp_code, otp_expires, otp_send_count, otp_window_start, referral_code, referred_by)
-         VALUES ($1, $2, $3, $4, $5, 1, NOW(), $6, $7) RETURNING id, name, phone`,
+        `INSERT INTO pool6.users (name, phone, password_hash, otp_code, otp_expires, otp_send_count, otp_window_start, referral_code, referred_by, terms_accepted_at)
+         VALUES ($1, $2, $3, $4, $5, 1, NOW(), $6, $7, NOW()) RETURNING id, name, phone`,
         [name, phone, password_hash, otp, expires, newReferralCode, referrerId]
       );
       user = insertResult.rows[0];
