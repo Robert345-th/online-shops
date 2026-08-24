@@ -61,6 +61,51 @@ router.get('/', async (req, res) => {
   }
 });
 
+// ADMIN ONLY — browse/search every listing regardless of status, seller
+// suspension, or subscription compliance. Used by the "All Listings" admin
+// tab so an admin can find and remove any post at any time, not just
+// listings that have already been reported.
+router.get('/admin/all', requireAuth, async (req, res) => {
+  try {
+    const adminCheck = await pool.query('SELECT is_admin FROM pool6.users WHERE id = $1', [req.userId]);
+    if (!adminCheck.rows[0]?.is_admin) {
+      return res.status(403).json({ error: 'Admin access only.' });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit) || 30, 100);
+    const offset = parseInt(req.query.offset) || 0;
+    const search = (req.query.search || '').trim();
+
+    const params = [limit, offset];
+    let searchClause = '';
+    if (search) {
+      params.push(`%${search}%`);
+      searchClause = `AND (l.title ILIKE $3 OR u.name ILIKE $3 OR u.shop_name ILIKE $3 OR u.phone ILIKE $3)`;
+    }
+
+    const result = await pool.query(
+      `
+      SELECT l.id, l.title, l.price, l.photos, l.status, l.date_posted,
+             l.seller_id, c.name AS category,
+             u.name AS seller_name, u.shop_name, u.phone AS seller_phone,
+             u.is_suspended AS seller_suspended
+      FROM pool6.listings l
+      LEFT JOIN pool6.categories c ON l.category_id = c.id
+      LEFT JOIN pool6.users u ON l.seller_id = u.id
+      WHERE 1=1
+      ${searchClause}
+      ORDER BY l.date_posted DESC
+      LIMIT $1 OFFSET $2
+      `,
+      params
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load listings.' });
+  }
+});
+
 router.get('/mine/all', requireAuth, async (req, res) => {
   try {
     const settingsResult = await pool.query('SELECT grace_period_end FROM pool6.app_settings WHERE id = 1');
@@ -479,7 +524,7 @@ router.delete('/:id', requireAuth, async (req, res) => {
       sendPushNotification(
         result.rows[0].seller_id,
         'Listing Removed',
-        `Your listing "${result.rows[0].title}" was removed for violating our policies.`
+        'Your post was removed by ZedMarket Admin.'
       );
     }
 
