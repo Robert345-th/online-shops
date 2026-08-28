@@ -54,6 +54,9 @@ app.use('/wanted', wantedRoutes);
 
 const { router: followsRoutes, ensureShopFollowsTable } = require('./follows');
 const { ensureLastSeenColumns } = require('./user-presence');
+const { ensureMarketplaceTables } = require('./marketplace-extras');
+const savedSearchesRoutes = require('./saved-searches');
+app.use('/saved-searches', savedSearchesRoutes);
 app.use('/follows', followsRoutes);
 
 const insightsRoutes = require('./insights');
@@ -229,5 +232,8 @@ app.listen(PORT, () => {
   });
   ensureLastSeenColumns().catch((err) => {
     console.error('Could not ensure last_seen columns:', err);
+  });
+  ensureMarketplaceTables().catch((err) => {
+    console.error('Could not ensure marketplace tables:', err);
   });
 });

@@ -4,6 +4,7 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 const { presencePublicFields } = require('./user-presence');
+const { recordReplyTime, isChatMuted, loadChatPrefs, ensureMarketplaceTables } = require('./marketplace-extras');
 
 // GET - list of conversations (grouped by other person)
 router.get('/conversations', requireAuth, async (req, res) => {
@@ -44,7 +45,13 @@ router.get('/conversations', requireAuth, async (req, res) => {
       [req.userId]
     );
 
-    res.json(result.rows);
+    const prefs = await loadChatPrefs(req.userId);
+    const rows = result.rows.map((row) => {
+      const pref = prefs[String(row.other_user_id)] || {};
+      return { ...row, pinned: !!pref.pinned, muted: !!pref.muted };
+    });
+    rows.sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.last_sent_at) - new Date(a.last_sent_at));
+    res.json(rows);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load conversations.' });
@@ -175,6 +182,8 @@ router.post('/', requireAuth, async (req, res) => {
 
     (async () => {
       try {
+        recordReplyTime(req.userId, receiver_id);
+        if (await isChatMuted(receiver_id, req.userId)) return;
         const senderResult = await pool.query('SELECT name FROM pool6.users WHERE id = $1', [req.userId]);
         const senderName = senderResult.rows[0]?.name || 'Someone';
         let previewText = content;
@@ -273,6 +282,31 @@ router.get('/unread-count', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load unread count.' });
+  }
+});
+
+router.put('/prefs/:otherUserId', requireAuth, async (req, res) => {
+  const otherId = parseInt(req.params.otherUserId, 10);
+  if (!Number.isFinite(otherId) || otherId <= 0 || otherId === req.userId) {
+    return res.status(400).json({ error: 'Invalid user.' });
+  }
+  try {
+    await ensureMarketplaceTables();
+    const pinned = typeof req.body.pinned === 'boolean' ? req.body.pinned : null;
+    const muted = typeof req.body.muted === 'boolean' ? req.body.muted : null;
+    const result = await pool.query(
+      `INSERT INTO pool6.chat_prefs (user_id, other_user_id, pinned, muted)
+       VALUES ($1, $2, COALESCE($3, false), COALESCE($4, false))
+       ON CONFLICT (user_id, other_user_id) DO UPDATE SET
+         pinned = COALESCE($3, pool6.chat_prefs.pinned),
+         muted = COALESCE($4, pool6.chat_prefs.muted)
+       RETURNING pinned, muted`,
+      [req.userId, otherId, pinned, muted]
+    );
+    res.json(result.rows[0]);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not update chat settings.' });
   }
 });
 

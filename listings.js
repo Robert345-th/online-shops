@@ -5,6 +5,7 @@ const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 const { getSellerCompliance, sellerListingsVisibleSql } = require('./shop-verification');
 const { notifyShopFollowers } = require('./follows');
+const { notifySavedSearches } = require('./marketplace-extras');
 
 function requiredSubCategory(categoryName) {
   if (categoryName === 'Cars') return 'Cars';
@@ -33,7 +34,7 @@ router.get('/', async (req, res) => {
       FROM pool6.listings l
       LEFT JOIN pool6.categories c ON l.category_id = c.id
       LEFT JOIN pool6.users u ON l.seller_id = u.id
-      WHERE l.status = 'active'
+      WHERE l.status IN ('active', 'reserved')
       AND (u.is_suspended = false OR u.is_suspended IS NULL)
       AND ${sellerListingsVisibleSql('u')}
       ${sellerClause}
@@ -192,7 +193,7 @@ router.post('/:id/view', async (req, res) => {
     const result = await pool.query(
       `UPDATE pool6.listings
        SET view_count = COALESCE(view_count, 0) + 1
-       WHERE id = $1 AND status = 'active'
+       WHERE id = $1 AND status IN ('active', 'reserved')
        RETURNING view_count`,
       [req.params.id]
     );
@@ -216,7 +217,8 @@ router.get('/:id', async (req, res) => {
               u.name AS seller_name,
               CASE WHEN u.is_admin THEN NULL ELSE u.phone END AS seller_phone,
               u.account_type AS seller_account_type, u.shop_name,
-              u.nrc_verified AS seller_nrc_verified
+              u.nrc_verified AS seller_nrc_verified,
+              u.avg_reply_secs, u.reply_count
        FROM pool6.listings l
        LEFT JOIN pool6.categories c ON l.category_id = c.id
        LEFT JOIN pool6.users u ON l.seller_id = u.id
@@ -379,6 +381,12 @@ router.post('/', requireAuth, async (req, res) => {
     }
 
     notifyShopFollowers(req.userId, listing);
+    let categoryName = 'General';
+    if (category_id) {
+      const catRow = await pool.query('SELECT name FROM pool6.categories WHERE id = $1', [category_id]);
+      categoryName = catRow.rows[0]?.name || 'General';
+    }
+    notifySavedSearches(req.userId, listing, categoryName);
 
     res.status(201).json(listing);
   } catch (err) {
@@ -495,12 +503,65 @@ router.post('/:id/mark-sold', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You can only mark your own listings as sold.' });
     }
 
-    await pool.query('DELETE FROM pool6.listings WHERE id = $1', [req.params.id]);
+    await pool.query(`UPDATE pool6.listings SET status = 'sold' WHERE id = $1`, [req.params.id]);
 
-    res.json({ success: true });
+    res.json({ success: true, status: 'sold' });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not mark listing as sold.' });
+  }
+});
+
+router.put('/:id/status', requireAuth, async (req, res) => {
+  const status = String(req.body.status || '').toLowerCase();
+  if (!['active', 'reserved', 'sold'].includes(status)) {
+    return res.status(400).json({ error: 'Status must be active, reserved, or sold.' });
+  }
+  try {
+    const check = await pool.query(
+      'SELECT seller_id FROM pool6.listings WHERE id = $1',
+      [req.params.id]
+    );
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+    if (check.rows[0].seller_id !== req.userId) {
+      return res.status(403).json({ error: 'You can only update your own listings.' });
+    }
+    await pool.query('UPDATE pool6.listings SET status = $1 WHERE id = $2', [status, req.params.id]);
+    res.json({ success: true, status });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not update listing status.' });
+  }
+});
+
+router.get('/:id/similar', async (req, res) => {
+  try {
+    const base = await pool.query(
+      'SELECT id, category_id, price FROM pool6.listings WHERE id = $1',
+      [req.params.id]
+    );
+    if (!base.rows.length) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+    const item = base.rows[0];
+    const result = await pool.query(
+      `SELECT l.id, l.title, l.price, l.photos, l.location_label, l.status
+       FROM pool6.listings l
+       LEFT JOIN pool6.users u ON l.seller_id = u.id
+       WHERE l.id <> $1
+         AND l.status IN ('active', 'reserved')
+         AND l.category_id = $2
+         AND (u.is_suspended = false OR u.is_suspended IS NULL)
+       ORDER BY ABS(COALESCE(l.price, 0) - $3), l.date_posted DESC
+       LIMIT 8`,
+      [item.id, item.category_id, item.price || 0]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load similar listings.' });
   }
 });
 
