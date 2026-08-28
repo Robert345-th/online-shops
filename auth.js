@@ -8,6 +8,7 @@ const requireAuth = require('./middleware');
 const {
   getSellerCompliance,
 } = require('./shop-verification');
+const { presencePublicFields } = require('./user-presence');
 const JWT_SECRET = process.env.JWT_SECRET;
 const AT = africastalking({
   apiKey: process.env.AT_API_KEY,
@@ -352,6 +353,53 @@ router.get('/referral-info', requireAuth, async (req, res) => {
 // GET - lightweight session check (used by the app to kick suspended users out instantly)
 router.get('/session', requireAuth, async (req, res) => {
   res.json({ ok: true, userId: req.userId });
+  pool.query(
+    `UPDATE pool6.users
+     SET last_seen_at = NOW()
+     WHERE id = $1 AND (last_seen_at IS NULL OR last_seen_at < NOW() - INTERVAL '45 seconds')`,
+    [req.userId]
+  ).catch(() => {});
+});
+
+router.get('/presence-settings', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      `SELECT show_online, show_last_seen FROM pool6.users WHERE id = $1`,
+      [req.userId]
+    );
+    const row = result.rows[0] || {};
+    res.json({
+      show_online: row.show_online !== false,
+      show_last_seen: row.show_last_seen !== false,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load presence settings.' });
+  }
+});
+
+router.put('/presence-settings', requireAuth, async (req, res) => {
+  try {
+    const showOnline = typeof req.body.show_online === 'boolean' ? req.body.show_online : null;
+    const showLastSeen = typeof req.body.show_last_seen === 'boolean' ? req.body.show_last_seen : null;
+    const result = await pool.query(
+      `UPDATE pool6.users
+       SET show_online = COALESCE($2, show_online),
+           show_last_seen = COALESCE($3, show_last_seen),
+           last_seen_at = NOW()
+       WHERE id = $1
+       RETURNING show_online, show_last_seen`,
+      [req.userId, showOnline, showLastSeen]
+    );
+    const row = result.rows[0] || {};
+    res.json({
+      show_online: row.show_online !== false,
+      show_last_seen: row.show_last_seen !== false,
+    });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not save presence settings.' });
+  }
 });
 
 // GET - basic public info about a user, for showing in a chat header
@@ -359,7 +407,8 @@ router.get('/session', requireAuth, async (req, res) => {
 router.get('/user-info/:id', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, shop_name, shop_photo_url, account_type, is_admin
+      `SELECT id, name, phone, shop_name, shop_photo_url, account_type, is_admin,
+              last_seen_at, show_online, show_last_seen
        FROM pool6.users WHERE id = $1`,
       [req.params.id]
     );
@@ -367,6 +416,7 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'User not found.' });
     }
     const user = result.rows[0];
+    const presence = presencePublicFields(user);
     res.json({
       id: user.id,
       display_name: user.is_admin ? 'ZedMarket Support' : (user.shop_name || user.name),
@@ -374,6 +424,10 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
       phone: user.is_admin ? null : user.phone,
       is_shop: user.account_type === 'shop',
       is_admin: user.is_admin,
+      online: presence.online,
+      last_seen: presence.last_seen,
+      hide_online: presence.hide_online,
+      presence_hidden: presence.hidden,
     });
   } catch (err) {
     console.error(err);

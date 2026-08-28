@@ -53,6 +53,7 @@ const wantedRoutes = require('./wanted');
 app.use('/wanted', wantedRoutes);
 
 const { router: followsRoutes, ensureShopFollowsTable } = require('./follows');
+const { ensureLastSeenColumns } = require('./user-presence');
 app.use('/follows', followsRoutes);
 
 const insightsRoutes = require('./insights');
@@ -225,5 +226,8 @@ app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
   ensureShopFollowsTable().catch((err) => {
     console.error('Could not ensure shop_follows table:', err);
+  });
+  ensureLastSeenColumns().catch((err) => {
+    console.error('Could not ensure last_seen columns:', err);
   });
 });

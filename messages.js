@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
+const { presencePublicFields } = require('./user-presence');
 
 // GET - list of conversations (grouped by other person)
 router.get('/conversations', requireAuth, async (req, res) => {
@@ -106,11 +107,18 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
           [req.userId, otherId]
         );
 
-    const [result, readResult, blockCheck, listingContextResult] = await Promise.all([
+    const presenceQuery = pool.query(
+      `SELECT last_seen_at, show_online, show_last_seen, is_admin
+       FROM pool6.users WHERE id = $1`,
+      [otherId]
+    );
+
+    const [result, readResult, blockCheck, listingContextResult, presenceResult] = await Promise.all([
       messagesQuery,
       readQuery,
       blockQuery,
       listingQuery,
+      presenceQuery,
     ]);
 
     res.json({
@@ -120,6 +128,7 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
       listing_context: listingContextResult.rows[0] || null,
       i_blocked_them: blockCheck.rows[0].i_blocked_them,
       they_blocked_me: blockCheck.rows[0].they_blocked_me,
+      presence: presencePublicFields(presenceResult.rows[0]),
     });
 
     pool.query(
