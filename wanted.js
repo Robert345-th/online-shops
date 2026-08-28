@@ -4,12 +4,33 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const { notifyMatchingSellers } = require('./wanted-alerts');
 
+let photosColumnReady = null;
+async function ensureWantedPhotosColumn() {
+  if (!photosColumnReady) {
+    photosColumnReady = pool
+      .query(`ALTER TABLE pool6.wanted_posts ADD COLUMN IF NOT EXISTS photos TEXT[] DEFAULT '{}'`)
+      .catch((err) => {
+        photosColumnReady = null;
+        throw err;
+      });
+  }
+  await photosColumnReady;
+}
+
+function normalizePhotos(photos) {
+  if (!Array.isArray(photos)) return [];
+  return photos
+    .filter((url) => typeof url === 'string' && url.startsWith('https://'))
+    .slice(0, 3);
+}
+
 // GET - public feed of open "wanted" posts
 router.get('/', async (req, res) => {
   try {
+    await ensureWantedPhotosColumn();
     const result = await pool.query(
       `SELECT w.id, w.title, w.description, w.budget, w.location_label, w.date_posted,
-              w.user_id, c.name AS category, u.name AS poster_name
+              w.user_id, w.photos, c.name AS category, u.name AS poster_name
        FROM pool6.wanted_posts w
        LEFT JOIN pool6.categories c ON w.category_id = c.id
        JOIN pool6.users u ON w.user_id = u.id
@@ -26,9 +47,10 @@ router.get('/', async (req, res) => {
 // GET - my own wanted posts (open and closed)
 router.get('/mine', requireAuth, async (req, res) => {
   try {
+    await ensureWantedPhotosColumn();
     const result = await pool.query(
       `SELECT w.id, w.title, w.description, w.budget, w.location_label, w.date_posted, w.status,
-              c.name AS category
+              w.photos, c.name AS category
        FROM pool6.wanted_posts w
        LEFT JOIN pool6.categories c ON w.category_id = c.id
        WHERE w.user_id = $1
@@ -44,18 +66,20 @@ router.get('/mine', requireAuth, async (req, res) => {
 
 // POST - create a new "wanted" post (any logged-in user, buyer or shop)
 router.post('/', requireAuth, async (req, res) => {
-  const { title, description, category_id, budget, location_label } = req.body;
+  const { title, description, category_id, budget, location_label, photos } = req.body;
+  const photoUrls = normalizePhotos(photos);
 
   if (!title || !title.trim()) {
     return res.status(400).json({ error: 'Please describe what you are looking for.' });
   }
 
   try {
+    await ensureWantedPhotosColumn();
     const result = await pool.query(
-      `INSERT INTO pool6.wanted_posts (user_id, title, description, category_id, budget, location_label)
-       VALUES ($1, $2, $3, $4, $5, $6)
+      `INSERT INTO pool6.wanted_posts (user_id, title, description, category_id, budget, location_label, photos)
+       VALUES ($1, $2, $3, $4, $5, $6, $7)
        RETURNING *`,
-      [req.userId, title.trim(), description || null, category_id || null, budget || null, location_label || null]
+      [req.userId, title.trim(), description || null, category_id || null, budget || null, location_label || null, photoUrls]
     );
 
     const categoryResult = category_id
@@ -121,3 +145,4 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.ensureWantedPhotosColumn = ensureWantedPhotosColumn;

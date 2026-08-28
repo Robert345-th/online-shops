@@ -236,4 +236,7 @@ app.listen(PORT, () => {
   ensureMarketplaceTables().catch((err) => {
     console.error('Could not ensure marketplace tables:', err);
   });
+  wantedRoutes.ensureWantedPhotosColumn().catch((err) => {
+    console.error('Could not ensure wanted photos column:', err);
+  });
 });
