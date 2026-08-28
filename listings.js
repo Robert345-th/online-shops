@@ -213,7 +213,9 @@ router.get('/:id', async (req, res) => {
               l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
               l.category_id, l.seller_id, l.boosted_until, l.view_count,
               c.name AS category,
-              u.name AS seller_name, u.phone AS seller_phone, u.account_type AS seller_account_type, u.shop_name,
+              u.name AS seller_name,
+              CASE WHEN u.is_admin THEN NULL ELSE u.phone END AS seller_phone,
+              u.account_type AS seller_account_type, u.shop_name,
               u.nrc_verified AS seller_nrc_verified
        FROM pool6.listings l
        LEFT JOIN pool6.categories c ON l.category_id = c.id

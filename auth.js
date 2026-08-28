@@ -371,7 +371,7 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
       id: user.id,
       display_name: user.is_admin ? 'ZedMarket Support' : (user.shop_name || user.name),
       shop_photo_url: user.shop_photo_url || null,
-      phone: user.phone,
+      phone: user.is_admin ? null : user.phone,
       is_shop: user.account_type === 'shop',
       is_admin: user.is_admin,
     });
