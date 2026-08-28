@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
+const { getFollowCounts } = require('./follows');
 
 // GET all reviews for a specific seller
 router.get('/seller/:sellerId', async (req, res) => {
@@ -66,6 +67,11 @@ router.get('/seller/:sellerId/profile', async (req, res) => {
       badge = { emoji: '🌟', label: 'Trusted Seller' };
     }
 
+    let counts = { followers: 0, following: 0 };
+    try {
+      counts = await getFollowCounts(seller.id);
+    } catch (e) {}
+
     res.json({
       id: seller.id,
       name: seller.name,
@@ -79,6 +85,8 @@ router.get('/seller/:sellerId/profile', async (req, res) => {
       total_reviews: parseInt(avgResult.rows[0].total),
       member_since: seller.date_joined,
       badge,
+      followers: counts.followers,
+      following: counts.following,
     });
   } catch (err) {
     console.error(err);

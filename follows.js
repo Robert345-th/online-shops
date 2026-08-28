@@ -26,6 +26,25 @@ async function ensureShopFollowsTable() {
   await tableReady;
 }
 
+async function getFollowCounts(userId) {
+  await ensureShopFollowsTable();
+  const result = await pool.query(
+    `SELECT
+       (SELECT COUNT(*)::int FROM pool6.shop_follows WHERE shop_id = $1) AS followers,
+       (SELECT COUNT(*)::int FROM pool6.shop_follows WHERE follower_id = $1) AS following`,
+    [userId]
+  );
+  return {
+    followers: result.rows[0]?.followers || 0,
+    following: result.rows[0]?.following || 0,
+  };
+}
+
+function parseUserId(value) {
+  const id = parseInt(value, 10);
+  return Number.isFinite(id) && id > 0 ? id : null;
+}
+
 async function notifyShopFollowers(shopId, listing) {
   try {
     await ensureShopFollowsTable();
@@ -89,11 +108,82 @@ router.get('/', requireAuth, async (req, res) => {
   }
 });
 
-router.get('/status/:shopId', requireAuth, async (req, res) => {
-  const shopId = parseInt(req.params.shopId, 10);
-  if (!Number.isFinite(shopId) || shopId <= 0) {
-    return res.status(400).json({ error: 'Invalid shop.' });
+router.get('/counts/:userId', async (req, res) => {
+  const userId = parseUserId(req.params.userId);
+  if (!userId) return res.status(400).json({ error: 'Invalid shop.' });
+  try {
+    const counts = await getFollowCounts(userId);
+    res.json(counts);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load follow counts.' });
   }
+});
+
+router.get('/followers/:shopId', async (req, res) => {
+  const shopId = parseUserId(req.params.shopId);
+  if (!shopId) return res.status(400).json({ error: 'Invalid shop.' });
+  try {
+    await ensureShopFollowsTable();
+    const result = await pool.query(
+      `SELECT
+         u.id,
+         COALESCE(NULLIF(u.shop_name, ''), u.name) AS display_name,
+         u.shop_name,
+         u.name
+       FROM pool6.shop_follows f
+       JOIN pool6.users u ON u.id = f.follower_id
+       WHERE f.shop_id = $1
+         AND (u.is_deleted = false OR u.is_deleted IS NULL)
+         AND (u.is_suspended = false OR u.is_suspended IS NULL)
+       ORDER BY f.created_at DESC
+       LIMIT 200`,
+      [shopId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load followers.' });
+  }
+});
+
+router.get('/following-of/:userId', async (req, res) => {
+  const userId = parseUserId(req.params.userId);
+  if (!userId) return res.status(400).json({ error: 'Invalid shop.' });
+  try {
+    await ensureShopFollowsTable();
+    const result = await pool.query(
+      `SELECT
+         u.id,
+         COALESCE(NULLIF(u.shop_name, ''), u.name) AS display_name,
+         u.shop_name,
+         u.name,
+         (
+           SELECT COUNT(*)::int
+           FROM pool6.listings l
+           WHERE l.seller_id = u.id
+             AND l.status = 'active'
+             AND l.date_posted > NOW() - INTERVAL '7 days'
+         ) AS new_listings
+       FROM pool6.shop_follows f
+       JOIN pool6.users u ON u.id = f.shop_id
+       WHERE f.follower_id = $1
+         AND (u.is_deleted = false OR u.is_deleted IS NULL)
+         AND (u.is_suspended = false OR u.is_suspended IS NULL)
+       ORDER BY f.created_at DESC
+       LIMIT 200`,
+      [userId]
+    );
+    res.json(result.rows);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load following list.' });
+  }
+});
+
+router.get('/status/:shopId', requireAuth, async (req, res) => {
+  const shopId = parseUserId(req.params.shopId);
+  if (!shopId) return res.status(400).json({ error: 'Invalid shop.' });
   try {
     await ensureShopFollowsTable();
     const result = await pool.query(
@@ -102,7 +192,7 @@ router.get('/status/:shopId', requireAuth, async (req, res) => {
        ) AS following`,
       [req.userId, shopId]
     );
-      res.json({ following: Boolean(result.rows[0].following) });
+    res.json({ following: Boolean(result.rows[0].following) });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load follow status.' });
@@ -110,10 +200,8 @@ router.get('/status/:shopId', requireAuth, async (req, res) => {
 });
 
 router.post('/:shopId', requireAuth, async (req, res) => {
-  const shopId = parseInt(req.params.shopId, 10);
-  if (!Number.isFinite(shopId) || shopId <= 0) {
-    return res.status(400).json({ error: 'Invalid shop.' });
-  }
+  const shopId = parseUserId(req.params.shopId);
+  if (!shopId) return res.status(400).json({ error: 'Invalid shop.' });
   if (shopId === req.userId) {
     return res.status(400).json({ error: 'You cannot follow your own shop.' });
   }
@@ -135,7 +223,8 @@ router.post('/:shopId', requireAuth, async (req, res) => {
        ON CONFLICT DO NOTHING`,
       [req.userId, shopId]
     );
-    res.status(201).json({ following: true });
+    const counts = await getFollowCounts(shopId);
+    res.status(201).json({ following: true, ...counts });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not follow shop.' });
@@ -143,21 +232,20 @@ router.post('/:shopId', requireAuth, async (req, res) => {
 });
 
 router.delete('/:shopId', requireAuth, async (req, res) => {
-  const shopId = parseInt(req.params.shopId, 10);
-  if (!Number.isFinite(shopId) || shopId <= 0) {
-    return res.status(400).json({ error: 'Invalid shop.' });
-  }
+  const shopId = parseUserId(req.params.shopId);
+  if (!shopId) return res.status(400).json({ error: 'Invalid shop.' });
   try {
     await ensureShopFollowsTable();
     await pool.query(
       `DELETE FROM pool6.shop_follows WHERE follower_id = $1 AND shop_id = $2`,
       [req.userId, shopId]
     );
-    res.json({ following: false });
+    const counts = await getFollowCounts(shopId);
+    res.json({ following: false, ...counts });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not unfollow shop.' });
   }
 });
 
-module.exports = { router, notifyShopFollowers, ensureShopFollowsTable };
+module.exports = { router, notifyShopFollowers, ensureShopFollowsTable, getFollowCounts };
