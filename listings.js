@@ -4,6 +4,7 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 const { getSellerCompliance, sellerListingsVisibleSql } = require('./shop-verification');
+const { notifyShopFollowers } = require('./follows');
 
 function requiredSubCategory(categoryName) {
   if (categoryName === 'Cars') return 'Cars';
@@ -374,6 +375,8 @@ router.post('/', requireAuth, async (req, res) => {
         [listing.id, land_details.size, land_details.size_unit, land_details.title_deed_status]
       );
     }
+
+    notifyShopFollowers(req.userId, listing);
 
     res.status(201).json(listing);
   } catch (err) {

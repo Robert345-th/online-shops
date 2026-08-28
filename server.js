@@ -52,6 +52,12 @@ app.use('/sale-confirmations', saleConfirmationsRoutes);
 const wantedRoutes = require('./wanted');
 app.use('/wanted', wantedRoutes);
 
+const { router: followsRoutes, ensureShopFollowsTable } = require('./follows');
+app.use('/follows', followsRoutes);
+
+const insightsRoutes = require('./insights');
+app.use('/insights', insightsRoutes);
+
 app.get('/', (req, res) => {
   res.send('Online Shops server is running.');
 });
@@ -217,4 +223,7 @@ cron.schedule('0 * * * *', notifyExpiredBoosts);
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
+  ensureShopFollowsTable().catch((err) => {
+    console.error('Could not ensure shop_follows table:', err);
+  });
 });
