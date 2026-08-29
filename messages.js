@@ -29,7 +29,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
            CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END
          )
            CASE WHEN sender_id = $1 THEN receiver_id ELSE sender_id END AS other_user_id,
-           content, photo_url, audio_url, deleted_for_everyone, sent_at, sender_id
+           content, photo_url, audio_url, deleted_for_everyone, sent_at, sender_id, read_at
          FROM pool6.messages
          WHERE (sender_id = $1 AND deleted_for_sender = false)
             OR (receiver_id = $1 AND deleted_for_receiver = false)
@@ -52,6 +52,10 @@ router.get('/conversations', requireAuth, async (req, res) => {
          l.deleted_for_everyone AS last_deleted_for_everyone,
          l.sent_at AS last_sent_at,
          l.sender_id,
+         l.read_at AS last_read_at,
+         u.last_seen_at,
+         u.show_online,
+         u.show_last_seen,
          COALESCE(un.unread_count, 0) AS unread_count
        FROM latest l
        JOIN pool6.users u ON u.id = l.other_user_id
@@ -63,7 +67,30 @@ router.get('/conversations', requireAuth, async (req, res) => {
     const prefs = await loadChatPrefs(req.userId);
     const rows = result.rows.map((row) => {
       const pref = prefs[String(row.other_user_id)] || {};
-      return { ...row, pinned: !!pref.pinned, muted: !!pref.muted };
+      const presence = presencePublicFields({
+        last_seen_at: row.last_seen_at,
+        show_online: row.show_online,
+        show_last_seen: row.show_last_seen,
+        is_admin: row.other_user_is_admin,
+      });
+      const iSentLast = Number(row.sender_id) === Number(req.userId);
+      return {
+        other_user_id: row.other_user_id,
+        other_user_name: row.other_user_name,
+        other_user_is_admin: row.other_user_is_admin,
+        last_message: row.last_message,
+        last_photo_url: row.last_photo_url,
+        last_audio_url: row.last_audio_url,
+        last_deleted_for_everyone: row.last_deleted_for_everyone,
+        last_sent_at: row.last_sent_at,
+        sender_id: row.sender_id,
+        last_read_at: row.last_read_at,
+        last_message_read: iSentLast && !!row.last_read_at,
+        unread_count: row.unread_count,
+        pinned: !!pref.pinned,
+        muted: !!pref.muted,
+        presence,
+      };
     });
     rows.sort((a, b) => Number(b.pinned) - Number(a.pinned) || new Date(b.last_sent_at) - new Date(a.last_sent_at));
     res.json(rows);
