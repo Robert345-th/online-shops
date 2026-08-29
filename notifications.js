@@ -98,7 +98,8 @@ router.post('/test-self', requireAuth, async (req, res) => {
       'ZedMarket',
       'This is a test ping.',
       '/chat-list.html',
-      'test-self'
+      'test-self',
+      { type: 'test' }
     );
     res.json({ sent: sent ? 1 : 0, hasFcm: true });
   } catch (err) {
@@ -133,31 +134,41 @@ async function sendWebPushNotification(userId, title, body, url, tag, type) {
   }
 }
 
-async function sendFcmNotification(userId, token, title, body, url, tag) {
+async function sendFcmNotification(userId, token, title, body, url, tag, extra = {}) {
   const messaging = getFirebaseMessaging();
   if (!messaging) {
     console.error('FCM skipped: Firebase is not configured');
     return false;
   }
+  const type = extra.type != null ? String(extra.type) : '';
+  const otherUserId = extra.otherUserId != null ? String(extra.otherUserId) : '';
+  const isChat = type === 'chat' && otherUserId;
+  const payload = {
+    token,
+    data: {
+      title: String(title || 'ZedMarket'),
+      body: String(body || ''),
+      url: String(url || '/chat-list.html'),
+      tag: String(tag || `zedmarket-${userId}`),
+      type,
+      otherUserId,
+    },
+    android: {
+      priority: 'high',
+    },
+  };
+  // Chat pings are data-only so Android can show a Reply box. Other alerts
+  // keep a display payload so the system tray still works if the app is dead.
+  if (!isChat) {
+    payload.notification = { title, body };
+    payload.android.notification = {
+      channelId: 'zedmarket_messages',
+      clickAction: 'OPEN_ZEDMARKET',
+    };
+  }
   try {
-    await messaging.send({
-      token,
-      notification: { title, body },
-      data: {
-        title: String(title || 'ZedMarket'),
-        body: String(body || ''),
-        url: String(url || '/chat-list.html'),
-        tag: String(tag || `zedmarket-${userId}`),
-      },
-      android: {
-        priority: 'high',
-        notification: {
-          channelId: 'zedmarket_messages',
-          clickAction: 'OPEN_ZEDMARKET',
-        },
-      },
-    });
-    console.log('FCM sent', userId);
+    await messaging.send(payload);
+    console.log('FCM sent', userId, type || 'alert');
     return true;
   } catch (err) {
     const code = err.errorInfo?.code || err.code;
@@ -206,7 +217,7 @@ async function sendPushNotification(userId, title, body, data = {}) {
     );
     const token = result.rows[0]?.push_token;
     if (isFcmToken(token)) {
-      await sendFcmNotification(userId, token, title, body, url, tag);
+      await sendFcmNotification(userId, token, title, body, url, tag, data);
     } else if (isExpoPushToken(token)) {
       await sendExpoNotification(token, title, body, { ...data, url });
     } else {
