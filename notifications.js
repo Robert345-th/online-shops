@@ -69,6 +69,44 @@ router.post('/save-token', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/status', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT push_token FROM pool6.users WHERE id = $1',
+      [req.userId]
+    );
+    const token = result.rows[0]?.push_token;
+    res.json({ hasFcm: isFcmToken(token) });
+  } catch (err) {
+    res.status(500).json({ error: 'Could not check push status.' });
+  }
+});
+
+router.post('/test-self', requireAuth, async (req, res) => {
+  try {
+    const result = await pool.query(
+      'SELECT push_token FROM pool6.users WHERE id = $1',
+      [req.userId]
+    );
+    const token = result.rows[0]?.push_token;
+    if (!isFcmToken(token)) {
+      return res.json({ sent: 0, hasFcm: false, reason: 'no_fcm_token' });
+    }
+    const sent = await sendFcmNotification(
+      req.userId,
+      token,
+      'ZedMarket',
+      'This is a test ping.',
+      '/chat-list.html',
+      'test-self'
+    );
+    res.json({ sent: sent ? 1 : 0, hasFcm: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not send test ping.' });
+  }
+});
+
 async function sendWebPushNotification(userId, title, body, url, tag, type) {
   const secret = process.env.PUSH_WEBHOOK_SECRET;
   if (!secret) return;
@@ -97,7 +135,10 @@ async function sendWebPushNotification(userId, title, body, url, tag, type) {
 
 async function sendFcmNotification(userId, token, title, body, url, tag) {
   const messaging = getFirebaseMessaging();
-  if (!messaging) return;
+  if (!messaging) {
+    console.error('FCM skipped: Firebase is not configured');
+    return false;
+  }
   try {
     await messaging.send({
       token,
@@ -116,8 +157,11 @@ async function sendFcmNotification(userId, token, title, body, url, tag) {
         },
       },
     });
+    console.log('FCM sent', userId);
+    return true;
   } catch (err) {
     const code = err.errorInfo?.code || err.code;
+    console.error('FCM send failed:', code, err.message || err);
     if (
       code === 'messaging/registration-token-not-registered'
       || code === 'messaging/invalid-registration-token'
@@ -128,9 +172,8 @@ async function sendFcmNotification(userId, token, title, body, url, tag) {
           [userId, token]
         );
       } catch (e) {}
-    } else {
-      console.error('FCM send failed:', err.message || err);
     }
+    return false;
   }
 }
 
@@ -166,6 +209,8 @@ async function sendPushNotification(userId, title, body, data = {}) {
       await sendFcmNotification(userId, token, title, body, url, tag);
     } else if (isExpoPushToken(token)) {
       await sendExpoNotification(token, title, body, { ...data, url });
+    } else {
+      console.log('Push skipped: no FCM token for user', userId);
     }
   } catch (err) {
     console.error('Push notification failed:', err);
