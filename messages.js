@@ -45,6 +45,7 @@ router.get('/conversations', requireAuth, async (req, res) => {
        SELECT
          l.other_user_id,
          u.name AS other_user_name,
+         u.is_admin AS other_user_is_admin,
          l.content AS last_message,
          l.photo_url AS last_photo_url,
          l.audio_url AS last_audio_url,

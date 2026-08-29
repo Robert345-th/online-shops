@@ -419,7 +419,8 @@ router.get('/user-info/:id', requireAuth, async (req, res) => {
     const presence = presencePublicFields(user);
     res.json({
       id: user.id,
-      display_name: user.is_admin ? 'ZedMarket Support' : (user.shop_name || user.name),
+      display_name: user.is_admin ? 'ZedMarket Support' : user.name,
+      shop_name: user.shop_name || null,
       shop_photo_url: user.shop_photo_url || null,
       phone: user.is_admin ? null : user.phone,
       is_shop: user.account_type === 'shop',
