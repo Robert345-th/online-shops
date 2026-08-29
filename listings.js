@@ -5,12 +5,34 @@ const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 const { getSellerCompliance, sellerListingsVisibleSql } = require('./shop-verification');
 const { notifyShopFollowers } = require('./follows');
-const { notifySavedSearches } = require('./marketplace-extras');
+const { notifySavedSearches, notifyListingWatchers, ensureMarketplaceTables } = require('./marketplace-extras');
 
 function requiredSubCategory(categoryName) {
   if (categoryName === 'Cars') return 'Cars';
   if (categoryName === 'Land') return 'Land';
   return 'General';
+}
+
+let videoColumnReady = null;
+async function ensureListingVideoColumn() {
+  if (!videoColumnReady) {
+    videoColumnReady = pool
+      .query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS video_url TEXT`)
+      .catch((err) => {
+        videoColumnReady = null;
+        throw err;
+      });
+  }
+  await videoColumnReady;
+}
+
+function normalizeVideoUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const trimmed = url.trim().slice(0, 500);
+  if (!/^https:\/\//i.test(trimmed)) return null;
+  if (!/res\.cloudinary\.com/i.test(trimmed)) return null;
+  if (!/\/video\/upload\//i.test(trimmed) && !/\.(mp4|webm|mov)(\?|$)/i.test(trimmed)) return null;
+  return trimmed;
 }
 
 router.get('/', async (req, res) => {
@@ -20,12 +42,13 @@ router.get('/', async (req, res) => {
   const filterBySeller = Number.isFinite(sellerId) && sellerId > 0;
 
   try {
+    await ensureListingVideoColumn();
     const params = filterBySeller ? [limit, offset, sellerId] : [limit, offset];
     const sellerClause = filterBySeller ? 'AND l.seller_id = $3' : '';
 
     const result = await pool.query(
       `
-      SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
+      SELECT l.id, l.title, l.description, l.price, l.photos, l.video_url, l.condition,
              l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
              l.boosted_until, l.seller_id, l.view_count,
              c.name AS category,
@@ -87,7 +110,7 @@ router.get('/admin/all', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT l.id, l.title, l.price, l.photos, l.status, l.date_posted,
+      SELECT l.id, l.title, l.price, l.photos, l.video_url, l.status, l.date_posted,
              l.seller_id, c.name AS category,
              u.name AS seller_name, u.shop_name, u.phone AS seller_phone,
              u.is_suspended AS seller_suspended
@@ -123,7 +146,7 @@ router.get('/mine/all', requireAuth, async (req, res) => {
     const activeCategories = subResult.rows.map((r) => r.category);
 
     const result = await pool.query(
-      `SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
+      `SELECT l.id, l.title, l.description, l.price, l.photos, l.video_url, l.condition,
               l.status, l.date_posted, l.location_label, l.category_id, l.boosted_until,
               l.view_count,
               c.name AS category
@@ -209,8 +232,9 @@ router.post('/:id/view', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   try {
+    await ensureListingVideoColumn();
     const result = await pool.query(
-      `SELECT l.id, l.title, l.description, l.price, l.photos, l.condition,
+      `SELECT l.id, l.title, l.description, l.price, l.photos, l.video_url, l.condition,
               l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
               l.category_id, l.seller_id, l.boosted_until, l.view_count,
               c.name AS category,
@@ -274,7 +298,7 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', requireAuth, async (req, res) => {
   const {
-    title, description, price, category_id, photos, condition,
+    title, description, price, category_id, photos, video_url, condition,
     latitude, longitude, location_label,
     car_details, land_details,
   } = req.body;
@@ -354,12 +378,15 @@ router.post('/', requireAuth, async (req, res) => {
       }
     }
 
+    await ensureListingVideoColumn();
+    const videoUrl = normalizeVideoUrl(video_url);
+
     const result = await pool.query(
       `INSERT INTO pool6.listings
-        (seller_id, title, description, price, category_id, photos, condition, latitude, longitude, location_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+        (seller_id, title, description, price, category_id, photos, video_url, condition, latitude, longitude, location_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
-      [req.userId, title, description, price, category_id, photos || [], condition, latitude, longitude, location_label]
+      [req.userId, title, description, price, category_id, photos || [], videoUrl, condition, latitude, longitude, location_label]
     );
 
     const listing = result.rows[0];
@@ -396,7 +423,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 router.put('/:id', requireAuth, async (req, res) => {
-  const { title, description, price, category_id, photos, condition, car_details, land_details } = req.body;
+  const { title, description, price, category_id, photos, video_url, condition, car_details, land_details } = req.body;
 
   if (!condition || !['New', 'Pre-owned'].includes(condition)) {
     return res.status(400).json({ error: 'Please select whether the item is New or Pre-owned.' });
@@ -419,12 +446,15 @@ router.put('/:id', requireAuth, async (req, res) => {
     const oldPrice = parseFloat(check.rows[0].price);
     const newPrice = parseFloat(price);
 
+    await ensureListingVideoColumn();
+    const videoUrl = normalizeVideoUrl(video_url);
+
     const result = await pool.query(
       `UPDATE pool6.listings
-       SET title = $1, description = $2, price = $3, category_id = $4, photos = $5, condition = $6
-       WHERE id = $7
+       SET title = $1, description = $2, price = $3, category_id = $4, photos = $5, video_url = $6, condition = $7
+       WHERE id = $8
        RETURNING *`,
-      [title, description, price, category_id, photos || [], condition, req.params.id]
+      [title, description, price, category_id, photos || [], videoUrl, condition, req.params.id]
     );
 
     if (car_details) {
@@ -451,14 +481,19 @@ router.put('/:id', requireAuth, async (req, res) => {
         [req.params.id]
       );
 
+      const payload = {
+        type: 'listing',
+        listingId: parseInt(req.params.id, 10),
+        url: `/listing.html?id=${req.params.id}`,
+        tag: `price-${req.params.id}`,
+      };
+      const dropTitle = 'Price drop';
+      const dropBody = `"${title}" dropped from K${oldPrice} to K${newPrice}`;
+
       for (const fav of favoriters.rows) {
-        sendPushNotification(
-          fav.user_id,
-          '💸 Price Drop!',
-          `"${title}" dropped from K${oldPrice} to K${newPrice} — a listing you saved.`,
-          { type: 'chat' }
-        );
+        sendPushNotification(fav.user_id, dropTitle, dropBody, payload);
       }
+      notifyListingWatchers(req.params.id, dropTitle, dropBody, payload);
     }
 
     res.json(result.rows[0]);
@@ -547,7 +582,7 @@ router.get('/:id/similar', async (req, res) => {
     }
     const item = base.rows[0];
     const result = await pool.query(
-      `SELECT l.id, l.title, l.price, l.photos, l.location_label, l.status
+      `SELECT l.id, l.title, l.price, l.photos, l.video_url, l.location_label, l.status
        FROM pool6.listings l
        LEFT JOIN pool6.users u ON l.seller_id = u.id
        WHERE l.id <> $1
@@ -562,6 +597,60 @@ router.get('/:id/similar', async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load similar listings.' });
+  }
+});
+
+router.get('/:id/watch', requireAuth, async (req, res) => {
+  try {
+    await ensureMarketplaceTables();
+    const result = await pool.query(
+      `SELECT 1 FROM pool6.listing_watches WHERE user_id = $1 AND listing_id = $2`,
+      [req.userId, req.params.id]
+    );
+    res.json({ watching: result.rows.length > 0 });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load notify status.' });
+  }
+});
+
+router.post('/:id/watch', requireAuth, async (req, res) => {
+  try {
+    await ensureMarketplaceTables();
+    const listing = await pool.query(
+      'SELECT id, seller_id FROM pool6.listings WHERE id = $1',
+      [req.params.id]
+    );
+    if (!listing.rows.length) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+    if (listing.rows[0].seller_id === req.userId) {
+      return res.status(400).json({ error: 'You cannot watch your own listing.' });
+    }
+    await pool.query(
+      `INSERT INTO pool6.listing_watches (user_id, listing_id)
+       VALUES ($1, $2)
+       ON CONFLICT DO NOTHING`,
+      [req.userId, req.params.id]
+    );
+    res.json({ watching: true });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not turn on notify.' });
+  }
+});
+
+router.delete('/:id/watch', requireAuth, async (req, res) => {
+  try {
+    await ensureMarketplaceTables();
+    await pool.query(
+      `DELETE FROM pool6.listing_watches WHERE user_id = $1 AND listing_id = $2`,
+      [req.userId, req.params.id]
+    );
+    res.json({ watching: false });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not turn off notify.' });
   }
 });
 
@@ -602,3 +691,4 @@ router.delete('/:id', requireAuth, async (req, res) => {
 });
 
 module.exports = router;
+module.exports.ensureListingVideoColumn = ensureListingVideoColumn;

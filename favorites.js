@@ -8,7 +8,7 @@ const { sendPushNotification } = require('./notifications');
 router.get('/', requireAuth, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT l.id, l.title, l.price, l.photos, l.status, l.date_posted, l.location_label,
+      `SELECT l.id, l.title, l.price, l.photos, l.video_url, l.status, l.date_posted, l.location_label,
               c.name AS category
        FROM pool6.favorites f
        JOIN pool6.listings l ON f.listing_id = l.id

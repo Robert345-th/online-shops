@@ -6,6 +6,20 @@ const { sendPushNotification } = require('./notifications');
 const { presencePublicFields } = require('./user-presence');
 const { recordReplyTime, isChatMuted, loadChatPrefs, ensureMarketplaceTables } = require('./marketplace-extras');
 
+let offerColumnsReady = null;
+async function ensureOfferColumns() {
+  if (!offerColumnsReady) {
+    offerColumnsReady = (async () => {
+      await pool.query(`ALTER TABLE pool6.messages ADD COLUMN IF NOT EXISTS offer_amount NUMERIC`);
+      await pool.query(`ALTER TABLE pool6.messages ADD COLUMN IF NOT EXISTS offer_status TEXT`);
+    })().catch((err) => {
+      offerColumnsReady = null;
+      throw err;
+    });
+  }
+  await offerColumnsReady;
+}
+
 // GET - list of conversations (grouped by other person)
 router.get('/conversations', requireAuth, async (req, res) => {
   try {
@@ -65,9 +79,11 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   const incremental = Number.isFinite(afterId) && afterId > 0;
 
   try {
+    await ensureOfferColumns();
     const messagesQuery = incremental
       ? pool.query(
           `SELECT id, sender_id, receiver_id, listing_id, content, photo_url, audio_url, audio_duration,
+                  offer_amount, offer_status,
                   deleted_for_everyone, sent_at, read_at
            FROM pool6.messages
            WHERE ((sender_id = $1 AND receiver_id = $2 AND deleted_for_sender = false)
@@ -78,6 +94,7 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
         )
       : pool.query(
           `SELECT id, sender_id, receiver_id, listing_id, content, photo_url, audio_url, audio_duration,
+                  offer_amount, offer_status,
                   deleted_for_everyone, sent_at, read_at
            FROM pool6.messages
            WHERE ((sender_id = $1 AND receiver_id = $2 AND deleted_for_sender = false)
@@ -149,28 +166,61 @@ router.get('/conversation/:otherUserId', requireAuth, async (req, res) => {
   }
 });
 
-// POST - send a message (text, and/or a photo, and/or a voice note)
+// POST - send a message (text, and/or a photo, and/or a voice note, and/or an offer)
 router.post('/', requireAuth, async (req, res) => {
-  const { receiver_id, content, photo_url, audio_url, audio_duration, listing_id } = req.body;
+  const { receiver_id, content, photo_url, audio_url, audio_duration, listing_id, offer_amount } = req.body;
 
   if (!receiver_id) {
     return res.status(400).json({ error: 'Receiver is required.' });
   }
 
-  if (!content && !photo_url && !audio_url) {
+  let offerAmount = null;
+  let offerStatus = null;
+  let messageContent = content || null;
+  if (offer_amount != null && offer_amount !== '') {
+    offerAmount = parseFloat(offer_amount);
+    if (!Number.isFinite(offerAmount) || offerAmount <= 0) {
+      return res.status(400).json({ error: 'Enter a valid offer amount.' });
+    }
+    offerAmount = Math.round(offerAmount * 100) / 100;
+    offerStatus = 'pending';
+    if (!messageContent) messageContent = `Offer: K${offerAmount}`;
+  }
+
+  if (!messageContent && !photo_url && !audio_url) {
     return res.status(400).json({ error: 'A message, photo, or voice note is required.' });
   }
 
   try {
+    await ensureOfferColumns();
+    if (offerAmount != null) {
+      if (!listing_id) {
+        return res.status(400).json({ error: 'Offer must be on a listing.' });
+      }
+      const listingRow = await pool.query(
+        'SELECT seller_id FROM pool6.listings WHERE id = $1',
+        [listing_id]
+      );
+      if (!listingRow.rows.length) {
+        return res.status(404).json({ error: 'Listing not found.' });
+      }
+      const sellerId = listingRow.rows[0].seller_id;
+      if (sellerId === req.userId) {
+        return res.status(400).json({ error: 'You cannot offer on your own listing.' });
+      }
+      if (parseInt(receiver_id, 10) !== sellerId) {
+        return res.status(400).json({ error: 'Offers go to the seller.' });
+      }
+    }
     const result = await pool.query(
-      `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content, photo_url, audio_url, audio_duration)
-       SELECT $1, $2, $3, $4, $5, $6, $7
+      `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content, photo_url, audio_url, audio_duration, offer_amount, offer_status)
+       SELECT $1, $2, $3, $4, $5, $6, $7, $8, $9
        WHERE NOT EXISTS (
          SELECT 1 FROM pool6.blocked_users
          WHERE (blocker_id = $1 AND blocked_id = $2) OR (blocker_id = $2 AND blocked_id = $1)
        )
        RETURNING *`,
-      [req.userId, receiver_id, listing_id || null, content || null, photo_url || null, audio_url || null, audio_duration || null]
+      [req.userId, receiver_id, listing_id || null, messageContent, photo_url || null, audio_url || null, audio_duration || null, offerAmount, offerStatus]
     );
 
     if (!result.rows.length) {
@@ -186,7 +236,8 @@ router.post('/', requireAuth, async (req, res) => {
         if (await isChatMuted(receiver_id, req.userId)) return;
         const senderResult = await pool.query('SELECT name FROM pool6.users WHERE id = $1', [req.userId]);
         const senderName = senderResult.rows[0]?.name || 'Someone';
-        let previewText = content;
+        let previewText = messageContent;
+        if (offerAmount) previewText = `Offer: K${offerAmount}`;
         if (photo_url) previewText = '📷 Sent a photo';
         if (audio_url) previewText = '🎤 Sent a voice note';
         await sendPushNotification(
@@ -338,4 +389,72 @@ router.delete('/block/:userId', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/offer/:id/respond', requireAuth, async (req, res) => {
+  const action = String(req.body.action || '').toLowerCase();
+  if (!['accept', 'decline', 'counter'].includes(action)) {
+    return res.status(400).json({ error: 'Choose accept, decline, or counter.' });
+  }
+  try {
+    await ensureOfferColumns();
+    const msgResult = await pool.query(
+      `SELECT * FROM pool6.messages WHERE id = $1`,
+      [req.params.id]
+    );
+    const msg = msgResult.rows[0];
+    if (!msg || !msg.offer_amount || msg.offer_status !== 'pending') {
+      return res.status(404).json({ error: 'Offer not found.' });
+    }
+    if (msg.receiver_id !== req.userId) {
+      return res.status(403).json({ error: 'Only the other person can respond to this offer.' });
+    }
+    if (action === 'counter') {
+      const counterAmount = parseFloat(req.body.amount);
+      if (!Number.isFinite(counterAmount) || counterAmount <= 0) {
+        return res.status(400).json({ error: 'Enter a counter amount.' });
+      }
+      await pool.query(
+        `UPDATE pool6.messages SET offer_status = 'countered' WHERE id = $1`,
+        [msg.id]
+      );
+      const rounded = Math.round(counterAmount * 100) / 100;
+      const inserted = await pool.query(
+        `INSERT INTO pool6.messages (sender_id, receiver_id, listing_id, content, offer_amount, offer_status)
+         VALUES ($1, $2, $3, $4, $5, 'pending')
+         RETURNING *`,
+        [req.userId, msg.sender_id, msg.listing_id, `Counter offer: K${rounded}`, rounded]
+      );
+      sendPushNotification(
+        msg.sender_id,
+        'Counter offer',
+        `Counter offer: K${rounded}`,
+        { type: 'chat', otherUserId: req.userId }
+      );
+      return res.json({ updated: { ...msg, offer_status: 'countered' }, message: inserted.rows[0] });
+    }
+    const status = action === 'accept' ? 'accepted' : 'declined';
+    const updated = await pool.query(
+      `UPDATE pool6.messages SET offer_status = $1 WHERE id = $2 RETURNING *`,
+      [status, msg.id]
+    );
+    if (action === 'accept' && msg.listing_id) {
+      await pool.query(
+        `UPDATE pool6.listings SET status = 'reserved'
+         WHERE id = $1 AND status = 'active' AND seller_id IN ($2, $3)`,
+        [msg.listing_id, req.userId, msg.sender_id]
+      );
+    }
+    sendPushNotification(
+      msg.sender_id,
+      action === 'accept' ? 'Offer accepted' : 'Offer declined',
+      action === 'accept' ? `Your offer of K${msg.offer_amount} was accepted` : `Your offer of K${msg.offer_amount} was declined`,
+      { type: 'chat', otherUserId: req.userId }
+    );
+    res.json({ message: updated.rows[0] });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not respond to offer.' });
+  }
+});
+
 module.exports = router;
+module.exports.ensureOfferColumns = ensureOfferColumns;

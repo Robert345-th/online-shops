@@ -239,4 +239,10 @@ app.listen(PORT, () => {
   wantedRoutes.ensureWantedPhotosColumn().catch((err) => {
     console.error('Could not ensure wanted photos column:', err);
   });
+  listingsRoutes.ensureListingVideoColumn().catch((err) => {
+    console.error('Could not ensure listing video column:', err);
+  });
+  messagesRoutes.ensureOfferColumns().catch((err) => {
+    console.error('Could not ensure offer columns:', err);
+  });
 });

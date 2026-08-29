@@ -21,6 +21,15 @@ async function ensureMarketplaceTables() {
       `);
       await pool.query(`CREATE INDEX IF NOT EXISTS saved_searches_user_id_idx ON pool6.saved_searches (user_id)`);
       await pool.query(`
+        CREATE TABLE IF NOT EXISTS pool6.listing_watches (
+          user_id INTEGER NOT NULL REFERENCES pool6.users(id) ON DELETE CASCADE,
+          listing_id INTEGER NOT NULL REFERENCES pool6.listings(id) ON DELETE CASCADE,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          PRIMARY KEY (user_id, listing_id)
+        )
+      `);
+      await pool.query(`CREATE INDEX IF NOT EXISTS listing_watches_listing_id_idx ON pool6.listing_watches (listing_id)`);
+      await pool.query(`
         CREATE TABLE IF NOT EXISTS pool6.chat_prefs (
           user_id INTEGER NOT NULL REFERENCES pool6.users(id) ON DELETE CASCADE,
           other_user_id INTEGER NOT NULL REFERENCES pool6.users(id) ON DELETE CASCADE,
@@ -146,9 +155,25 @@ async function loadChatPrefs(userId) {
   }
 }
 
+async function notifyListingWatchers(listingId, title, body, data) {
+  try {
+    await ensureMarketplaceTables();
+    const result = await pool.query(
+      `SELECT user_id FROM pool6.listing_watches WHERE listing_id = $1 LIMIT 80`,
+      [listingId]
+    );
+    for (const row of result.rows) {
+      sendPushNotification(row.user_id, title, body, data);
+    }
+  } catch (err) {
+    console.error('notifyListingWatchers failed:', err);
+  }
+}
+
 module.exports = {
   ensureMarketplaceTables,
   notifySavedSearches,
+  notifyListingWatchers,
   recordReplyTime,
   isChatMuted,
   loadChatPrefs,
