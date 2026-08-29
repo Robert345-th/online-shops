@@ -9,11 +9,20 @@ const { sendPushNotification } = require('./notifications');
 router.post('/', requireAuth, async (req, res) => {
   const { category, transaction_ref } = req.body;
 
-  if (!category || !transaction_ref) {
-    return res.status(400).json({ error: 'Category and transaction reference are required.' });
+  if (!category) {
+    return res.status(400).json({ error: 'Category is required.' });
   }
 
   try {
+    const settingsResult = await pool.query(
+      'SELECT grace_period_end FROM pool6.app_settings WHERE id = 1'
+    );
+    const paymentEnforced = !!settingsResult.rows[0]?.grace_period_end;
+    const ref = String(transaction_ref || '').trim();
+    if (paymentEnforced && !ref) {
+      return res.status(400).json({ error: 'Category and transaction reference are required.' });
+    }
+
     const priceResult = await pool.query(
       'SELECT price FROM pool6.plan_prices WHERE category = $1',
       [category]
@@ -30,7 +39,7 @@ router.post('/', requireAuth, async (req, res) => {
         (user_id, category, plan_type, price, payment_status, transaction_ref)
        VALUES ($1, $2, 'monthly', $3, 'pending', $4)
        RETURNING *`,
-      [req.userId, category, price, transaction_ref]
+      [req.userId, category, price, ref || 'FREE_LAUNCH']
     );
     res.status(201).json(result.rows[0]);
   } catch (err) {

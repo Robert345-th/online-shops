@@ -40,11 +40,26 @@ router.get('/', async (req, res) => {
   const offset = parseInt(req.query.offset) || 0;
   const sellerId = parseInt(req.query.seller_id, 10);
   const filterBySeller = Number.isFinite(sellerId) && sellerId > 0;
+  const q = String(req.query.q || '').trim();
+  const category = String(req.query.category || '').trim();
+  const filterCategory = category && category !== 'All';
 
   try {
     await ensureListingVideoColumn();
-    const params = filterBySeller ? [limit, offset, sellerId] : [limit, offset];
-    const sellerClause = filterBySeller ? 'AND l.seller_id = $3' : '';
+    const params = [limit, offset];
+    let extra = '';
+    if (filterBySeller) {
+      params.push(sellerId);
+      extra += ` AND l.seller_id = $${params.length}`;
+    }
+    if (q) {
+      params.push(`%${q}%`);
+      extra += ` AND (l.title ILIKE $${params.length} OR COALESCE(l.description, '') ILIKE $${params.length} OR COALESCE(l.location_label, '') ILIKE $${params.length} OR COALESCE(c.name, '') ILIKE $${params.length})`;
+    }
+    if (filterCategory) {
+      params.push(category);
+      extra += ` AND c.name = $${params.length}`;
+    }
 
     const result = await pool.query(
       `
@@ -68,7 +83,7 @@ router.get('/', async (req, res) => {
       WHERE l.status IN ('active', 'reserved')
       AND (u.is_suspended = false OR u.is_suspended IS NULL)
       AND ${sellerListingsVisibleSql('u')}
-      ${sellerClause}
+      ${extra}
       AND (
         (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1) IS NULL
         OR NOW() < (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1)
@@ -438,7 +453,7 @@ router.post('/', requireAuth, async (req, res) => {
 });
 
 router.put('/:id', requireAuth, async (req, res) => {
-  const { title, description, price, category_id, photos, video_url, condition, car_details, land_details } = req.body;
+  const { title, description, price, category_id, photos, video_url, condition, car_details, land_details, latitude, longitude, location_label } = req.body;
 
   if (!condition || !['New', 'Pre-owned'].includes(condition)) {
     return res.status(400).json({ error: 'Please select whether the item is New or Pre-owned.' });
@@ -454,7 +469,7 @@ router.put('/:id', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Listing not found.' });
     }
 
-    if (check.rows[0].seller_id !== req.userId) {
+    if (Number(check.rows[0].seller_id) !== Number(req.userId)) {
       return res.status(403).json({ error: 'You can only edit your own listings.' });
     }
 
@@ -463,13 +478,18 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     await ensureListingVideoColumn();
     const videoUrl = normalizeVideoUrl(video_url);
+    const lat = latitude == null || latitude === '' ? null : parseFloat(latitude);
+    const lng = longitude == null || longitude === '' ? null : parseFloat(longitude);
+    const loc = location_label != null ? (String(location_label).trim() || null) : null;
 
     const result = await pool.query(
       `UPDATE pool6.listings
-       SET title = $1, description = $2, price = $3, category_id = $4, photos = $5, video_url = $6, condition = $7
-       WHERE id = $8
+       SET title = $1, description = $2, price = $3, category_id = $4, photos = $5, video_url = $6, condition = $7,
+           latitude = $8, longitude = $9, location_label = $10
+       WHERE id = $11
        RETURNING *`,
-      [title, description, price, category_id, photos || [], videoUrl, condition, req.params.id]
+      [title, description, price, category_id, photos || [], videoUrl, condition,
+       Number.isFinite(lat) ? lat : null, Number.isFinite(lng) ? lng : null, loc, req.params.id]
     );
 
     if (car_details) {
@@ -549,7 +569,7 @@ router.post('/:id/mark-sold', requireAuth, async (req, res) => {
       return res.status(404).json({ error: 'Listing not found.' });
     }
 
-    if (check.rows[0].seller_id !== req.userId) {
+    if (Number(check.rows[0].seller_id) !== Number(req.userId)) {
       return res.status(403).json({ error: 'You can only mark your own listings as sold.' });
     }
 
@@ -569,16 +589,31 @@ router.put('/:id/status', requireAuth, async (req, res) => {
   }
   try {
     const check = await pool.query(
-      'SELECT seller_id FROM pool6.listings WHERE id = $1',
+      'SELECT seller_id, status, title FROM pool6.listings WHERE id = $1',
       [req.params.id]
     );
     if (check.rows.length === 0) {
       return res.status(404).json({ error: 'Listing not found.' });
     }
-    if (check.rows[0].seller_id !== req.userId) {
+    if (Number(check.rows[0].seller_id) !== Number(req.userId)) {
       return res.status(403).json({ error: 'You can only update your own listings.' });
     }
+    const prevStatus = check.rows[0].status;
     await pool.query('UPDATE pool6.listings SET status = $1 WHERE id = $2', [status, req.params.id]);
+    if (status === 'active' && prevStatus && prevStatus !== 'active') {
+      const title = check.rows[0].title || 'A listing';
+      notifyListingWatchers(
+        req.params.id,
+        'Back on ZedMarket',
+        `"${title}" is listed again.`,
+        {
+          type: 'listing',
+          listingId: parseInt(req.params.id, 10),
+          url: `/listing.html?id=${req.params.id}`,
+          tag: `watch-${req.params.id}`,
+        }
+      );
+    }
     res.json({ success: true, status });
   } catch (err) {
     console.error(err);

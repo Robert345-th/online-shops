@@ -125,15 +125,23 @@ router.post('/signup', async (req, res) => {
       );
       user = insertResult.rows[0];
     }
+    let smsSent = true;
     try {
       await smsService.send({
         to: [toIntlPhone(phone)],
         message: `Your ZedMarket verification code is: ${otp}`,
       });
     } catch (smsErr) {
+      smsSent = false;
       console.error('SMS send failed:', smsErr);
     }
-    res.status(201).json({ user, message: 'Account created. Please verify with the OTP sent to your phone.' });
+    res.status(201).json({
+      user,
+      sms_sent: smsSent,
+      message: smsSent
+        ? 'Account created. Please verify with the OTP sent to your phone.'
+        : 'Account created, but the verification SMS did not send. Open verify and tap resend.',
+    });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Something went wrong creating the account.' });
@@ -471,6 +479,14 @@ router.post('/register-shop', requireAuth, async (req, res) => {
   }
 
   try {
+    const existing = await pool.query(
+      'SELECT shop_status FROM pool6.users WHERE id = $1',
+      [req.userId]
+    );
+    if (existing.rows[0]?.shop_status === 'approved') {
+      return res.status(400).json({ error: 'Your shop is already approved.' });
+    }
+
     await pool.query(
       `UPDATE pool6.users
        SET name = $1,

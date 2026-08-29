@@ -30,7 +30,8 @@ router.get('/', async (req, res) => {
     await ensureWantedPhotosColumn();
     const result = await pool.query(
       `SELECT w.id, w.title, w.description, w.budget, w.location_label, w.date_posted,
-              w.user_id, w.photos, c.name AS category, u.name AS poster_name
+              w.user_id, w.photos, c.name AS category,
+              COALESCE(NULLIF(TRIM(u.shop_name), ''), u.name) AS poster_name
        FROM pool6.wanted_posts w
        LEFT JOIN pool6.categories c ON w.category_id = c.id
        JOIN pool6.users u ON w.user_id = u.id

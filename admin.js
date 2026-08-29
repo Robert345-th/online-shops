@@ -26,7 +26,10 @@ router.get('/support-contact', async (req, res) => {
 router.get('/users', requireAuth, requireAdmin, async (req, res) => {
   try {
     const result = await pool.query(
-      `SELECT id, name, phone, account_type, is_suspended, date_joined, phone_verified
+      `SELECT id, name, phone, account_type, is_suspended, date_joined, phone_verified,
+              date_of_birth, city, province, shop_name, shop_status, shop_address, home_address,
+              location_label, nrc_number, nrc_status, nrc_verified, referral_code,
+              nrc_photo_url, nrc_back_photo_url, selfie_photo_url
        FROM pool6.users
        WHERE phone_verified = true
        AND (is_deleted = false OR is_deleted IS NULL)

@@ -224,7 +224,7 @@ router.post('/:shopId', requireAuth, async (req, res) => {
       [req.userId, shopId]
     );
     const counts = await getFollowCounts(shopId);
-    res.status(201).json({ following: true, ...counts });
+    res.status(201).json({ ...counts, following: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not follow shop.' });
@@ -241,7 +241,7 @@ router.delete('/:shopId', requireAuth, async (req, res) => {
       [req.userId, shopId]
     );
     const counts = await getFollowCounts(shopId);
-    res.json({ following: false, ...counts });
+    res.json({ ...counts, following: false });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not unfollow shop.' });
