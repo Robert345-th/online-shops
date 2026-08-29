@@ -41,7 +41,8 @@ function pushUrlFromData(data) {
   if (data.url) return data.url;
   if (data.type === 'wanted') return '/wanted.html';
   if (data.type === 'chat' && data.otherUserId) {
-    return `/chat-room.html?userId=${data.otherUserId}`;
+    const name = data.senderName ? `&name=${encodeURIComponent(data.senderName)}` : '';
+    return `/chat-room.html?userId=${data.otherUserId}${name}`;
   }
   if (data.type === 'listing' && data.listingId) {
     return `/listing.html?id=${data.listingId}`;

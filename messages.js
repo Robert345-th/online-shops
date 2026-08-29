@@ -233,7 +233,7 @@ router.post('/', requireAuth, async (req, res) => {
         return res.status(404).json({ error: 'Listing not found.' });
       }
       const sellerId = listingRow.rows[0].seller_id;
-      if (sellerId === req.userId) {
+      if (Number(sellerId) === Number(req.userId)) {
         return res.status(400).json({ error: 'You cannot offer on your own listing.' });
       }
       if (parseInt(receiver_id, 10) !== sellerId) {
@@ -272,7 +272,7 @@ router.post('/', requireAuth, async (req, res) => {
           receiver_id,
           `New message from ${senderName}`,
           previewText && previewText.length > 60 ? previewText.slice(0, 60) + '...' : previewText,
-          { type: 'chat', otherUserId: req.userId }
+          { type: 'chat', otherUserId: req.userId, senderName }
         );
       } catch (e) {}
     })();
@@ -297,9 +297,9 @@ router.put('/:id/delete-for-me', requireAuth, async (req, res) => {
 
     const msg = check.rows[0];
 
-    if (msg.sender_id === req.userId) {
+    if (Number(msg.sender_id) === Number(req.userId)) {
       await pool.query('UPDATE pool6.messages SET deleted_for_sender = true WHERE id = $1', [req.params.id]);
-    } else if (msg.receiver_id === req.userId) {
+    } else if (Number(msg.receiver_id) === Number(req.userId)) {
       await pool.query('UPDATE pool6.messages SET deleted_for_receiver = true WHERE id = $1', [req.params.id]);
     } else {
       return res.status(403).json({ error: 'You are not part of this conversation.' });
@@ -327,7 +327,7 @@ router.put('/:id/delete-for-everyone', requireAuth, async (req, res) => {
 
     const msg = check.rows[0];
 
-    if (msg.sender_id !== req.userId) {
+    if (Number(msg.sender_id) !== Number(req.userId)) {
       return res.status(403).json({ error: 'You can only unsend your own messages.' });
     }
 
@@ -432,7 +432,7 @@ router.post('/offer/:id/respond', requireAuth, async (req, res) => {
     if (!msg || !msg.offer_amount || msg.offer_status !== 'pending') {
       return res.status(404).json({ error: 'Offer not found.' });
     }
-    if (msg.receiver_id !== req.userId) {
+    if (Number(msg.receiver_id) !== Number(req.userId)) {
       return res.status(403).json({ error: 'Only the other person can respond to this offer.' });
     }
     if (action === 'counter') {

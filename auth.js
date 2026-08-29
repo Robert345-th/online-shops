@@ -169,7 +169,7 @@ router.post('/verify-otp', async (req, res) => {
     );
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status },
+      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status, shop_name: user.shop_name || null },
       token,
     });
   } catch (err) {
@@ -311,7 +311,7 @@ router.post('/login', async (req, res) => {
     }
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({
-      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status },
+      user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status, shop_name: user.shop_name || null },
       token
     });
   } catch (err) {

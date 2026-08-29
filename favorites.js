@@ -13,7 +13,7 @@ router.get('/', requireAuth, async (req, res) => {
        FROM pool6.favorites f
        JOIN pool6.listings l ON f.listing_id = l.id
        LEFT JOIN pool6.categories c ON l.category_id = c.id
-       WHERE f.user_id = $1 AND l.status = 'active'
+       WHERE f.user_id = $1 AND l.status IN ('active', 'reserved')
        ORDER BY f.id DESC`,
       [req.userId]
     );
