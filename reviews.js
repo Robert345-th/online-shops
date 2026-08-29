@@ -38,7 +38,13 @@ router.get('/seller/:sellerId', async (req, res) => {
 router.get('/seller/:sellerId/profile', async (req, res) => {
   try {
     const userResult = await pool.query(
-      `SELECT id, name, shop_name, account_type, total_sold, date_joined, nrc_verified
+      `SELECT id, name, shop_name, account_type, shop_status, total_sold, date_joined, nrc_verified,
+              EXISTS (
+                SELECT 1 FROM pool6.subscriptions s
+                WHERE s.user_id = pool6.users.id
+                  AND s.payment_status = 'active'
+                  AND s.end_date > NOW()
+              ) AS subscription_active
        FROM pool6.users WHERE id = $1`,
       [req.params.sellerId]
     );
@@ -56,7 +62,7 @@ router.get('/seller/:sellerId/profile', async (req, res) => {
     );
 
     const activeListingsResult = await pool.query(
-      `SELECT COUNT(*) FROM pool6.listings WHERE seller_id = $1 AND status = 'active'`,
+      `SELECT COUNT(*) FROM pool6.listings WHERE seller_id = $1 AND status IN ('active', 'reserved')`,
       [req.params.sellerId]
     );
 
@@ -78,6 +84,8 @@ router.get('/seller/:sellerId/profile', async (req, res) => {
       shop_name: seller.shop_name,
       display_name: seller.shop_name || seller.name,
       account_type: seller.account_type,
+      shop_status: seller.shop_status || null,
+      subscription_active: seller.subscription_active === true || seller.subscription_active === 't',
       nrc_verified: seller.nrc_verified === true,
       total_sold: seller.total_sold || 0,
       active_listings: parseInt(activeListingsResult.rows[0].count),

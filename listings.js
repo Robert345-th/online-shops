@@ -53,7 +53,15 @@ router.get('/', async (req, res) => {
              l.boosted_until, l.seller_id, l.view_count,
              c.name AS category,
              u.name AS seller_name, u.shop_name,
-             u.nrc_verified AS seller_nrc_verified
+             u.account_type AS seller_account_type,
+             u.shop_status AS seller_shop_status,
+             u.nrc_verified AS seller_nrc_verified,
+             EXISTS (
+               SELECT 1 FROM pool6.subscriptions s
+               WHERE s.user_id = u.id
+                 AND s.payment_status = 'active'
+                 AND s.end_date > NOW()
+             ) AS seller_subscription_active
       FROM pool6.listings l
       LEFT JOIN pool6.categories c ON l.category_id = c.id
       LEFT JOIN pool6.users u ON l.seller_id = u.id
@@ -241,7 +249,14 @@ router.get('/:id', async (req, res) => {
               u.name AS seller_name,
               CASE WHEN u.is_admin THEN NULL ELSE u.phone END AS seller_phone,
               u.account_type AS seller_account_type, u.shop_name,
+              u.shop_status AS seller_shop_status,
               u.nrc_verified AS seller_nrc_verified,
+              EXISTS (
+                SELECT 1 FROM pool6.subscriptions s
+                WHERE s.user_id = u.id
+                  AND s.payment_status = 'active'
+                  AND s.end_date > NOW()
+              ) AS seller_subscription_active,
               u.avg_reply_secs, u.reply_count
        FROM pool6.listings l
        LEFT JOIN pool6.categories c ON l.category_id = c.id
