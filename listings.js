@@ -16,12 +16,13 @@ function requiredSubCategory(categoryName) {
 let videoColumnReady = null;
 async function ensureListingVideoColumn() {
   if (!videoColumnReady) {
-    videoColumnReady = pool
-      .query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS video_url TEXT`)
-      .catch((err) => {
-        videoColumnReady = null;
-        throw err;
-      });
+    videoColumnReady = Promise.all([
+      pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS video_url TEXT`),
+      pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC`),
+    ]).then(() => {}).catch((err) => {
+      videoColumnReady = null;
+      throw err;
+    });
   }
   await videoColumnReady;
 }
@@ -63,7 +64,7 @@ router.get('/', async (req, res) => {
 
     const result = await pool.query(
       `
-      SELECT l.id, l.title, l.description, l.price, l.photos, l.video_url, l.condition,
+      SELECT l.id, l.title, l.description, l.price, l.compare_at_price, l.photos, l.video_url, l.condition,
              l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
              l.boosted_until, l.seller_id, l.view_count,
              c.name AS category,
@@ -156,6 +157,7 @@ router.get('/admin/all', requireAuth, async (req, res) => {
 
 router.get('/mine/all', requireAuth, async (req, res) => {
   try {
+    await ensureListingVideoColumn();
     const settingsResult = await pool.query('SELECT grace_period_end FROM pool6.app_settings WHERE id = 1');
     const gracePeriodEnd = settingsResult.rows[0]?.grace_period_end;
     const gracePeriodPassed = gracePeriodEnd && new Date() > new Date(gracePeriodEnd);
@@ -169,7 +171,7 @@ router.get('/mine/all', requireAuth, async (req, res) => {
     const activeCategories = subResult.rows.map((r) => r.category);
 
     const result = await pool.query(
-      `SELECT l.id, l.title, l.description, l.price, l.photos, l.video_url, l.condition,
+      `SELECT l.id, l.title, l.description, l.price, l.compare_at_price, l.photos, l.video_url, l.condition,
               l.status, l.date_posted, l.location_label, l.category_id, l.boosted_until,
               l.view_count,
               c.name AS category
@@ -257,7 +259,7 @@ router.get('/:id', async (req, res) => {
   try {
     await ensureListingVideoColumn();
     const result = await pool.query(
-      `SELECT l.id, l.title, l.description, l.price, l.photos, l.video_url, l.condition,
+      `SELECT l.id, l.title, l.description, l.price, l.compare_at_price, l.photos, l.video_url, l.condition,
               l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
               l.category_id, l.seller_id, l.boosted_until, l.view_count,
               c.name AS category,
@@ -460,8 +462,9 @@ router.put('/:id', requireAuth, async (req, res) => {
   }
 
   try {
+    await ensureListingVideoColumn();
     const check = await pool.query(
-      'SELECT seller_id, price FROM pool6.listings WHERE id = $1',
+      'SELECT seller_id, price, compare_at_price FROM pool6.listings WHERE id = $1',
       [req.params.id]
     );
 
@@ -475,6 +478,13 @@ router.put('/:id', requireAuth, async (req, res) => {
 
     const oldPrice = parseFloat(check.rows[0].price);
     const newPrice = parseFloat(price);
+    let compareAt = parseFloat(check.rows[0].compare_at_price);
+    if (!Number.isFinite(compareAt) || compareAt <= 0) compareAt = null;
+    if (Number.isFinite(newPrice) && Number.isFinite(oldPrice) && newPrice < oldPrice) {
+      compareAt = Math.max(oldPrice, compareAt || 0);
+    } else if (Number.isFinite(newPrice) && Number.isFinite(compareAt) && newPrice >= compareAt) {
+      compareAt = null;
+    }
 
     await ensureListingVideoColumn();
     const videoUrl = normalizeVideoUrl(video_url);
@@ -485,11 +495,11 @@ router.put('/:id', requireAuth, async (req, res) => {
     const result = await pool.query(
       `UPDATE pool6.listings
        SET title = $1, description = $2, price = $3, category_id = $4, photos = $5, video_url = $6, condition = $7,
-           latitude = $8, longitude = $9, location_label = $10
-       WHERE id = $11
+           latitude = $8, longitude = $9, location_label = $10, compare_at_price = $11
+       WHERE id = $12
        RETURNING *`,
       [title, description, price, category_id, photos || [], videoUrl, condition,
-       Number.isFinite(lat) ? lat : null, Number.isFinite(lng) ? lng : null, loc, req.params.id]
+       Number.isFinite(lat) ? lat : null, Number.isFinite(lng) ? lng : null, loc, compareAt, req.params.id]
     );
 
     if (car_details) {
@@ -648,7 +658,7 @@ router.get('/:id/similar', async (req, res) => {
     }
     const item = base.rows[0];
     const result = await pool.query(
-      `SELECT l.id, l.title, l.price, l.photos, l.video_url, l.location_label, l.status
+      `SELECT l.id, l.title, l.price, l.compare_at_price, l.photos, l.video_url, l.location_label, l.status
        FROM pool6.listings l
        LEFT JOIN pool6.users u ON l.seller_id = u.id
        WHERE l.id <> $1
