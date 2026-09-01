@@ -242,6 +242,9 @@ app.listen(PORT, () => {
   listingsRoutes.ensureListingVideoColumn().catch((err) => {
     console.error('Could not ensure listing video column:', err);
   });
+  listingsRoutes.ensureFeedIndexes().catch((err) => {
+    console.error('Could not ensure feed indexes:', err);
+  });
   messagesRoutes.ensureOfferColumns().catch((err) => {
     console.error('Could not ensure offer columns:', err);
   });

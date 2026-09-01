@@ -2,11 +2,18 @@ const pool = require('./db');
 
 const NRC_GRACE_DAYS = 5;
 
+let settingsCache = { ts: 0, data: null };
+const SETTINGS_TTL_MS = 30000;
+
 async function getAppSettings() {
+  if (settingsCache.data && Date.now() - settingsCache.ts < SETTINGS_TTL_MS) {
+    return settingsCache.data;
+  }
   const result = await pool.query(
     'SELECT grace_period_end, nrc_grace_period_end, warning_message FROM pool6.app_settings WHERE id = 1'
   );
-  return result.rows[0] || {};
+  settingsCache = { ts: Date.now(), data: result.rows[0] || {} };
+  return settingsCache.data;
 }
 
 function gracePeriodPassed(graceEnd) {

@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
-const { getSellerCompliance, sellerListingsVisibleSql } = require('./shop-verification');
+const { getSellerCompliance, getAppSettings } = require('./shop-verification');
 const { notifyShopFollowers } = require('./follows');
 const { notifySavedSearches, notifyListingWatchers, ensureMarketplaceTables } = require('./marketplace-extras');
 
@@ -27,6 +27,45 @@ async function ensureListingVideoColumn() {
   await videoColumnReady;
 }
 
+let feedIndexesReady = null;
+async function ensureFeedIndexes() {
+  if (!feedIndexesReady) {
+    feedIndexesReady = pool.query(`
+      CREATE INDEX IF NOT EXISTS listings_feed_posted_idx
+        ON pool6.listings (date_posted DESC)
+        WHERE status IN ('active', 'reserved');
+      CREATE INDEX IF NOT EXISTS listings_seller_id_idx
+        ON pool6.listings (seller_id);
+      CREATE INDEX IF NOT EXISTS listings_category_id_idx
+        ON pool6.listings (category_id);
+      CREATE INDEX IF NOT EXISTS subscriptions_user_active_idx
+        ON pool6.subscriptions (user_id, category)
+        WHERE payment_status = 'active';
+      CREATE INDEX IF NOT EXISTS messages_inbox_unread_idx
+        ON pool6.messages (receiver_id)
+        WHERE read_at IS NULL AND deleted_for_receiver = false AND deleted_for_everyone = false;
+    `).then(() => {}).catch((err) => {
+      feedIndexesReady = null;
+      throw err;
+    });
+  }
+  await feedIndexesReady;
+}
+
+function slimListingPhotos(rows) {
+  if (!Array.isArray(rows)) return rows;
+  for (const row of rows) {
+    if (Array.isArray(row.photos) && row.photos.length > 1) {
+      row.photos = row.photos.slice(0, 1);
+    }
+  }
+  return rows;
+}
+
+function graceStillActive(end) {
+  return !end || Date.now() < new Date(end).getTime();
+}
+
 function normalizeVideoUrl(url) {
   if (!url || typeof url !== 'string') return null;
   const trimmed = url.trim().slice(0, 500);
@@ -47,6 +86,7 @@ router.get('/', async (req, res) => {
 
   try {
     await ensureListingVideoColumn();
+    const settings = await getAppSettings();
     const params = [limit, offset];
     let extra = '';
     if (filterBySeller) {
@@ -55,16 +95,29 @@ router.get('/', async (req, res) => {
     }
     if (q) {
       params.push(`%${q}%`);
-      extra += ` AND (l.title ILIKE $${params.length} OR COALESCE(l.description, '') ILIKE $${params.length} OR COALESCE(l.location_label, '') ILIKE $${params.length} OR COALESCE(c.name, '') ILIKE $${params.length})`;
+      extra += ` AND (l.title ILIKE $${params.length} OR COALESCE(l.location_label, '') ILIKE $${params.length} OR COALESCE(c.name, '') ILIKE $${params.length})`;
     }
     if (filterCategory) {
       params.push(category);
       extra += ` AND c.name = $${params.length}`;
     }
+    if (!graceStillActive(settings.nrc_grace_period_end)) {
+      extra += ` AND u.nrc_verified = true`;
+    }
+    if (!graceStillActive(settings.grace_period_end)) {
+      extra += ` AND EXISTS (
+        SELECT 1 FROM pool6.subscriptions s
+        WHERE s.user_id = l.seller_id
+          AND s.payment_status = 'active'
+          AND s.end_date > NOW()
+          AND s.category = CASE WHEN c.name IN ('Cars', 'Land') THEN c.name ELSE 'General' END
+      )`;
+    }
 
     const result = await pool.query(
       `
-      SELECT l.id, l.title, l.description, l.price, l.compare_at_price, l.photos, l.video_url, l.condition,
+      SELECT l.id, l.title, l.price, l.compare_at_price,
+             COALESCE(l.photos[1:1], '{}') AS photos, l.video_url, l.condition,
              l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
              l.boosted_until, l.seller_id, l.view_count,
              c.name AS category,
@@ -72,30 +125,18 @@ router.get('/', async (req, res) => {
              u.account_type AS seller_account_type,
              u.shop_status AS seller_shop_status,
              u.nrc_verified AS seller_nrc_verified,
-             EXISTS (
-               SELECT 1 FROM pool6.subscriptions s
-               WHERE s.user_id = u.id
-                 AND s.payment_status = 'active'
-                 AND s.end_date > NOW()
-             ) AS seller_subscription_active
+             (sub.user_id IS NOT NULL) AS seller_subscription_active
       FROM pool6.listings l
       LEFT JOIN pool6.categories c ON l.category_id = c.id
       LEFT JOIN pool6.users u ON l.seller_id = u.id
+      LEFT JOIN (
+        SELECT DISTINCT user_id
+        FROM pool6.subscriptions
+        WHERE payment_status = 'active' AND end_date > NOW()
+      ) sub ON sub.user_id = u.id
       WHERE l.status IN ('active', 'reserved')
       AND (u.is_suspended = false OR u.is_suspended IS NULL)
-      AND ${sellerListingsVisibleSql('u')}
       ${extra}
-      AND (
-        (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1) IS NULL
-        OR NOW() < (SELECT grace_period_end FROM pool6.app_settings WHERE id = 1)
-        OR EXISTS (
-          SELECT 1 FROM pool6.subscriptions s
-          WHERE s.user_id = l.seller_id
-          AND s.payment_status = 'active'
-          AND s.end_date > NOW()
-          AND s.category = CASE WHEN c.name IN ('Cars', 'Land') THEN c.name ELSE 'General' END
-        )
-      )
       ORDER BY
         CASE WHEN l.boosted_until IS NOT NULL AND l.boosted_until > NOW() THEN 0 ELSE 1 END,
         l.date_posted DESC
@@ -103,7 +144,10 @@ router.get('/', async (req, res) => {
     `,
       params
     );
-    res.json(result.rows);
+    res.set('Cache-Control', (q || filterBySeller)
+      ? 'private, max-age=8'
+      : 'public, max-age=12, stale-while-revalidate=30');
+    res.json(slimListingPhotos(result.rows));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load listings.' });
@@ -258,6 +302,10 @@ router.post('/:id/view', async (req, res) => {
 router.get('/:id', async (req, res) => {
   try {
     await ensureListingVideoColumn();
+    const settings = await getAppSettings();
+    const nrcFilter = graceStillActive(settings.nrc_grace_period_end)
+      ? ''
+      : ' AND u.nrc_verified = true';
     const result = await pool.query(
       `SELECT l.id, l.title, l.description, l.price, l.compare_at_price, l.photos, l.video_url, l.condition,
               l.status, l.date_posted, l.latitude, l.longitude, l.location_label,
@@ -279,7 +327,7 @@ router.get('/:id', async (req, res) => {
        LEFT JOIN pool6.categories c ON l.category_id = c.id
        LEFT JOIN pool6.users u ON l.seller_id = u.id
        WHERE l.id = $1
-       AND ${sellerListingsVisibleSql('u')}`,
+       ${nrcFilter}`,
       [req.params.id]
     );
 
@@ -290,37 +338,44 @@ router.get('/:id', async (req, res) => {
     const listing = result.rows[0];
     listing.is_boosted = listing.boosted_until && new Date(listing.boosted_until) > new Date();
 
-    const settingsResult = await pool.query('SELECT grace_period_end FROM pool6.app_settings WHERE id = 1');
-    const gracePeriodEnd = settingsResult.rows[0]?.grace_period_end;
-    const gracePeriodPassed = gracePeriodEnd && new Date() > new Date(gracePeriodEnd);
-
-    let paymentDisabled = false;
-    if (gracePeriodPassed) {
-      const needed = requiredSubCategory(listing.category);
-      const subCheck = await pool.query(
-        `SELECT 1 FROM pool6.subscriptions WHERE user_id = $1 AND category = $2 AND payment_status = 'active' AND end_date > NOW()`,
-        [listing.seller_id, needed]
+    const extras = [];
+    if (!graceStillActive(settings.grace_period_end)) {
+      extras.push(
+        pool.query(
+          `SELECT 1 FROM pool6.subscriptions WHERE user_id = $1 AND category = $2 AND payment_status = 'active' AND end_date > NOW()`,
+          [listing.seller_id, requiredSubCategory(listing.category)]
+        ).then((subCheck) => {
+          listing.payment_disabled = subCheck.rows.length === 0;
+        })
       );
-      paymentDisabled = subCheck.rows.length === 0;
+    } else {
+      listing.payment_disabled = false;
     }
-    listing.payment_disabled = paymentDisabled;
 
     if (listing.category === 'Cars') {
-      const carResult = await pool.query(
-        'SELECT make, model, year, mileage FROM pool6.car_details WHERE listing_id = $1',
-        [req.params.id]
+      extras.push(
+        pool.query(
+          'SELECT make, model, year, mileage FROM pool6.car_details WHERE listing_id = $1',
+          [req.params.id]
+        ).then((carResult) => {
+          listing.car_details = carResult.rows[0] || null;
+        })
       );
-      listing.car_details = carResult.rows[0] || null;
     }
 
     if (listing.category === 'Land') {
-      const landResult = await pool.query(
-        'SELECT size, size_unit, title_deed_status FROM pool6.land_details WHERE listing_id = $1',
-        [req.params.id]
+      extras.push(
+        pool.query(
+          'SELECT size, size_unit, title_deed_status FROM pool6.land_details WHERE listing_id = $1',
+          [req.params.id]
+        ).then((landResult) => {
+          listing.land_details = landResult.rows[0] || null;
+        })
       );
-      listing.land_details = landResult.rows[0] || null;
     }
 
+    if (extras.length) await Promise.all(extras);
+    res.set('Cache-Control', 'public, max-age=8, stale-while-revalidate=20');
     res.json(listing);
   } catch (err) {
     console.error(err);
@@ -658,7 +713,7 @@ router.get('/:id/similar', async (req, res) => {
     }
     const item = base.rows[0];
     const result = await pool.query(
-      `SELECT l.id, l.title, l.price, l.compare_at_price, l.photos, l.video_url, l.location_label, l.status
+      `SELECT l.id, l.title, l.price, l.compare_at_price, COALESCE(l.photos[1:1], '{}') AS photos, l.video_url, l.location_label, l.status
        FROM pool6.listings l
        LEFT JOIN pool6.users u ON l.seller_id = u.id
        WHERE l.id <> $1
@@ -669,7 +724,7 @@ router.get('/:id/similar', async (req, res) => {
        LIMIT 8`,
       [item.id, item.category_id, item.price || 0]
     );
-    res.json(result.rows);
+    res.json(slimListingPhotos(result.rows));
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load similar listings.' });
@@ -768,3 +823,4 @@ router.delete('/:id', requireAuth, async (req, res) => {
 
 module.exports = router;
 module.exports.ensureListingVideoColumn = ensureListingVideoColumn;
+module.exports.ensureFeedIndexes = ensureFeedIndexes;
