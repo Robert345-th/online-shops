@@ -4,7 +4,7 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 const { presencePublicFields } = require('./user-presence');
-const { recordReplyTime, isChatMuted, loadChatPrefs, ensureMarketplaceTables } = require('./marketplace-extras');
+const { ensureBlockedUsersTable, getBlockState } = require('./user-blocks');
 
 let offerColumnsReady = null;
 async function ensureOfferColumns() {
@@ -60,6 +60,11 @@ router.get('/conversations', requireAuth, async (req, res) => {
        FROM latest l
        JOIN pool6.users u ON u.id = l.other_user_id
        LEFT JOIN unread un ON un.other_user_id = l.other_user_id
+       WHERE NOT EXISTS (
+         SELECT 1 FROM pool6.blocked_users b
+         WHERE (b.blocker_id = $1 AND b.blocked_id = l.other_user_id)
+            OR (b.blocker_id = l.other_user_id AND b.blocked_id = $1)
+       )
        ORDER BY l.sent_at DESC`,
       [req.userId]
     );
@@ -389,14 +394,44 @@ router.put('/prefs/:otherUserId', requireAuth, async (req, res) => {
   }
 });
 
+// GET - block status with another user
+router.get('/block/:userId', requireAuth, async (req, res) => {
+  try {
+    const otherId = parseInt(req.params.userId, 10);
+    if (!Number.isFinite(otherId) || otherId <= 0) {
+      return res.status(400).json({ error: 'Invalid user.' });
+    }
+    const state = await getBlockState(req.userId, otherId);
+    res.json(state);
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load block status.' });
+  }
+});
+
 // POST - block a user
 router.post('/block/:userId', requireAuth, async (req, res) => {
   try {
+    const otherId = parseInt(req.params.userId, 10);
+    if (!Number.isFinite(otherId) || otherId <= 0) {
+      return res.status(400).json({ error: 'Invalid user.' });
+    }
+    if (Number(otherId) === Number(req.userId)) {
+      return res.status(400).json({ error: 'You cannot block yourself.' });
+    }
+    await ensureBlockedUsersTable();
+    const other = await pool.query('SELECT id, is_admin FROM pool6.users WHERE id = $1', [otherId]);
+    if (!other.rows.length) {
+      return res.status(404).json({ error: 'User not found.' });
+    }
+    if (other.rows[0].is_admin) {
+      return res.status(400).json({ error: 'You cannot block this account.' });
+    }
     await pool.query(
       `INSERT INTO pool6.blocked_users (blocker_id, blocked_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
-      [req.userId, req.params.userId]
+      [req.userId, otherId]
     );
-    res.json({ success: true });
+    res.json({ success: true, i_blocked_them: true });
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not block user.' });

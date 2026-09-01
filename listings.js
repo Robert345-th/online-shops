@@ -6,6 +6,7 @@ const { sendPushNotification } = require('./notifications');
 const { getSellerCompliance, getAppSettings } = require('./shop-verification');
 const { notifyShopFollowers } = require('./follows');
 const { notifySavedSearches, notifyListingWatchers, ensureMarketplaceTables } = require('./marketplace-extras');
+const { ensureBlockedUsersTable, blockPairSql, getBlockState } = require('./user-blocks');
 
 function requiredSubCategory(categoryName) {
   if (categoryName === 'Cars') return 'Cars';
@@ -19,12 +20,59 @@ async function ensureListingVideoColumn() {
     videoColumnReady = Promise.all([
       pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS video_url TEXT`),
       pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC`),
+      pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS refreshed_at TIMESTAMPTZ`),
     ]).then(() => {}).catch((err) => {
       videoColumnReady = null;
       throw err;
     });
   }
   await videoColumnReady;
+}
+
+let quietReady = null;
+async function ensureQuietColumn() {
+  await ensureListingVideoColumn();
+  if (!quietReady) {
+    quietReady = pool.query(
+      `UPDATE pool6.listings
+       SET refreshed_at = COALESCE(refreshed_at, date_posted, NOW())
+       WHERE refreshed_at IS NULL`
+    ).catch((err) => {
+      quietReady = null;
+      throw err;
+    });
+  }
+  await quietReady;
+}
+
+async function quietStaleListings() {
+  await ensureQuietColumn();
+  const result = await pool.query(
+    `UPDATE pool6.listings
+     SET status = 'quiet'
+     WHERE status = 'active'
+       AND COALESCE(refreshed_at, date_posted) < NOW() - INTERVAL '21 days'
+       AND (boosted_until IS NULL OR boosted_until < NOW())
+     RETURNING id, seller_id, title`
+  );
+  for (const row of result.rows) {
+    const title = String(row.title || 'Your listing').slice(0, 70);
+    sendPushNotification(
+      row.seller_id,
+      'Still selling this?',
+      `"${title}" was hidden from the feed. Open it and tap Still selling to put it back.`,
+      {
+        type: 'listing',
+        listingId: row.id,
+        url: `/listing.html?id=${row.id}`,
+        tag: `quiet-${row.id}`,
+      }
+    );
+  }
+  if (result.rows.length) {
+    console.log(`Quieted ${result.rows.length} stale listing(s).`);
+  }
+  return result.rows.length;
 }
 
 let feedIndexesReady = null;
@@ -143,6 +191,7 @@ router.get('/', async (req, res) => {
 
   try {
     await ensureListingVideoColumn();
+    await ensureBlockedUsersTable();
     const settings = await getAppSettings();
     const params = [limit, offset];
     let extra = '';
@@ -170,6 +219,14 @@ router.get('/', async (req, res) => {
           AND s.category = CASE WHEN c.name IN ('Cars', 'Land') THEN c.name ELSE 'General' END
       )`;
     }
+    const viewerId = requireAuth.userIdFromToken(req);
+    if (viewerId) {
+      params.push(viewerId);
+      extra += ` AND ${blockPairSql('$' + params.length, 'l.seller_id')}`;
+    }
+    const statusSql = filterBySeller
+      ? `l.status IN ('active', 'reserved')`
+      : `l.status = 'active'`;
 
     const result = await pool.query(
       `
@@ -191,7 +248,7 @@ router.get('/', async (req, res) => {
         FROM pool6.subscriptions
         WHERE payment_status = 'active' AND end_date > NOW()
       ) sub ON sub.user_id = u.id
-      WHERE l.status IN ('active', 'reserved')
+      WHERE ${statusSql}
       AND (u.is_suspended = false OR u.is_suspended IS NULL)
       ${extra}
       ORDER BY
@@ -201,7 +258,7 @@ router.get('/', async (req, res) => {
     `,
       params
     );
-    res.set('Cache-Control', (q || filterBySeller)
+    res.set('Cache-Control', (q || filterBySeller || viewerId)
       ? 'private, max-age=8'
       : 'public, max-age=12, stale-while-revalidate=30');
     res.json(slimListingPhotos(result.rows));
@@ -347,6 +404,7 @@ router.get('/recent', requireAuth, async (req, res) => {
        JOIN pool6.listings l ON l.id = rv.listing_id
        WHERE rv.user_id = $1
          AND l.status IN ('active', 'reserved', 'sold')
+         AND ${blockPairSql('$1', 'l.seller_id')}
        ORDER BY rv.viewed_at DESC
        LIMIT 12`,
       [req.userId]
@@ -372,6 +430,7 @@ router.post('/recent', requireAuth, async (req, res) => {
        JOIN pool6.listings l ON l.id = rv.listing_id
        WHERE rv.user_id = $1
          AND l.status IN ('active', 'reserved', 'sold')
+         AND ${blockPairSql('$1', 'l.seller_id')}
        ORDER BY rv.viewed_at DESC
        LIMIT 12`,
       [req.userId]
@@ -445,6 +504,31 @@ router.get('/:id', async (req, res) => {
     }
 
     const listing = result.rows[0];
+    const viewerId = requireAuth.userIdFromToken(req);
+    const isOwner = viewerId && Number(listing.seller_id) === Number(viewerId);
+
+    if (listing.status === 'quiet' && !isOwner) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+
+    if (viewerId && !isOwner) {
+      const blocked = await getBlockState(viewerId, listing.seller_id);
+      listing.i_blocked_them = blocked.i_blocked_them;
+      listing.they_blocked_me = blocked.they_blocked_me;
+      if (blocked.i_blocked_them || blocked.they_blocked_me) {
+        return res.status(403).json({
+          error: blocked.i_blocked_them ? 'You blocked this seller.' : 'This listing is not available.',
+          blocked: true,
+          i_blocked_them: blocked.i_blocked_them,
+          they_blocked_me: blocked.they_blocked_me,
+          seller_id: listing.seller_id,
+        });
+      }
+    } else {
+      listing.i_blocked_them = false;
+      listing.they_blocked_me = false;
+    }
+
     listing.is_boosted = listing.boosted_until && new Date(listing.boosted_until) > new Date();
 
     const extras = [];
@@ -484,7 +568,7 @@ router.get('/:id', async (req, res) => {
     }
 
     if (extras.length) await Promise.all(extras);
-    res.set('Cache-Control', 'public, max-age=8, stale-while-revalidate=20');
+    res.set('Cache-Control', viewerId ? 'private, max-age=8' : 'public, max-age=8, stale-while-revalidate=20');
     res.json(listing);
   } catch (err) {
     console.error(err);
@@ -579,8 +663,8 @@ router.post('/', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO pool6.listings
-        (seller_id, title, description, price, category_id, photos, video_url, condition, latitude, longitude, location_label)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+        (seller_id, title, description, price, category_id, photos, video_url, condition, latitude, longitude, location_label, refreshed_at)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
        RETURNING *`,
       [req.userId, title, description, price, category_id, photos || [], videoUrl, condition, latitude, longitude, location_label]
     );
@@ -787,8 +871,32 @@ router.put('/:id/status', requireAuth, async (req, res) => {
         `UPDATE pool6.listings SET status = 'sold', sold_at = COALESCE(sold_at, NOW()) WHERE id = $1`,
         [req.params.id]
       );
+    } else if (status === 'active') {
+      await ensureQuietColumn();
+      await pool.query(
+        `UPDATE pool6.listings
+         SET status = 'active',
+             date_posted = CASE WHEN $2 IN ('quiet', 'reserved') THEN NOW() ELSE date_posted END,
+             refreshed_at = NOW()
+         WHERE id = $1`,
+        [req.params.id, prevStatus]
+      );
     } else {
       await pool.query('UPDATE pool6.listings SET status = $1 WHERE id = $2', [status, req.params.id]);
+    }
+    if (status === 'reserved' && prevStatus === 'active') {
+      const title = check.rows[0].title || 'A listing';
+      notifyListingWatchers(
+        req.params.id,
+        'Reserved',
+        `"${title}" is reserved for another buyer.`,
+        {
+          type: 'listing',
+          listingId: parseInt(req.params.id, 10),
+          url: `/listing.html?id=${req.params.id}`,
+          tag: `watch-${req.params.id}`,
+        }
+      );
     }
     if (status === 'active' && prevStatus && prevStatus !== 'active') {
       const title = check.rows[0].title || 'A listing';
@@ -811,6 +919,47 @@ router.put('/:id/status', requireAuth, async (req, res) => {
   }
 });
 
+router.post('/:id/refresh', requireAuth, async (req, res) => {
+  try {
+    await ensureQuietColumn();
+    const check = await pool.query(
+      'SELECT seller_id, status, title FROM pool6.listings WHERE id = $1',
+      [req.params.id]
+    );
+    if (check.rows.length === 0) {
+      return res.status(404).json({ error: 'Listing not found.' });
+    }
+    if (Number(check.rows[0].seller_id) !== Number(req.userId)) {
+      return res.status(403).json({ error: 'You can only update your own listings.' });
+    }
+    if (check.rows[0].status !== 'quiet') {
+      return res.status(400).json({ error: 'This listing is already on the feed.' });
+    }
+    await pool.query(
+      `UPDATE pool6.listings
+       SET status = 'active', date_posted = NOW(), refreshed_at = NOW()
+       WHERE id = $1`,
+      [req.params.id]
+    );
+    const title = check.rows[0].title || 'A listing';
+    notifyListingWatchers(
+      req.params.id,
+      'Back on ZedMarket',
+      `"${title}" is listed again.`,
+      {
+        type: 'listing',
+        listingId: parseInt(req.params.id, 10),
+        url: `/listing.html?id=${req.params.id}`,
+        tag: `watch-${req.params.id}`,
+      }
+    );
+    res.json({ success: true, status: 'active' });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not put this listing back on the feed.' });
+  }
+});
+
 router.get('/:id/similar', async (req, res) => {
   try {
     const base = await pool.query(
@@ -821,17 +970,25 @@ router.get('/:id/similar', async (req, res) => {
       return res.status(404).json({ error: 'Listing not found.' });
     }
     const item = base.rows[0];
+    const viewerId = requireAuth.userIdFromToken(req);
+    const similarParams = [item.id, item.category_id, item.price || 0];
+    let blockSql = '';
+    if (viewerId) {
+      similarParams.push(viewerId);
+      blockSql = ` AND ${blockPairSql('$' + similarParams.length, 'l.seller_id')}`;
+    }
     const result = await pool.query(
       `SELECT l.id, l.title, l.price, l.compare_at_price, COALESCE(l.photos[1:1], '{}') AS photos, l.video_url, l.location_label, l.status
        FROM pool6.listings l
        LEFT JOIN pool6.users u ON l.seller_id = u.id
        WHERE l.id <> $1
-         AND l.status IN ('active', 'reserved')
+         AND l.status = 'active'
          AND l.category_id = $2
          AND (u.is_suspended = false OR u.is_suspended IS NULL)
+         ${blockSql}
        ORDER BY ABS(COALESCE(l.price, 0) - $3), l.date_posted DESC
        LIMIT 8`,
-      [item.id, item.category_id, item.price || 0]
+      similarParams
     );
     res.json(slimListingPhotos(result.rows));
   } catch (err) {
@@ -934,3 +1091,5 @@ module.exports = router;
 module.exports.ensureListingVideoColumn = ensureListingVideoColumn;
 module.exports.ensureFeedIndexes = ensureFeedIndexes;
 module.exports.ensureRecentlyViewedTable = ensureRecentlyViewedTable;
+module.exports.quietStaleListings = quietStaleListings;
+module.exports.ensureQuietColumn = ensureQuietColumn;

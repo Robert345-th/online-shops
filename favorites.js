@@ -3,6 +3,7 @@ const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
+const { blockPairSql } = require('./user-blocks');
 
 // GET - my favorited listings
 router.get('/', requireAuth, async (req, res) => {
@@ -14,6 +15,7 @@ router.get('/', requireAuth, async (req, res) => {
        JOIN pool6.listings l ON f.listing_id = l.id
        LEFT JOIN pool6.categories c ON l.category_id = c.id
        WHERE f.user_id = $1 AND l.status IN ('active', 'reserved')
+         AND ${blockPairSql('$1', 'l.seller_id')}
        ORDER BY f.id DESC`,
       [req.userId]
     );

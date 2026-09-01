@@ -55,6 +55,7 @@ app.use('/wanted', wantedRoutes);
 const { router: followsRoutes, ensureShopFollowsTable } = require('./follows');
 const { ensureLastSeenColumns } = require('./user-presence');
 const { ensureAppPrefsColumn } = require('./user-prefs');
+const { ensureBlockedUsersTable } = require('./user-blocks');
 const { ensureMarketplaceTables } = require('./marketplace-extras');
 const savedSearchesRoutes = require('./saved-searches');
 app.use('/saved-searches', savedSearchesRoutes);
@@ -221,6 +222,11 @@ async function notifyExpiredBoosts() {
 
 // Schedule: subscription reminders (9am), expire old confirmations (12pm), digests (6pm), boost expiry check (hourly)
 cron.schedule('0 9 * * *', sendSubscriptionReminders);
+cron.schedule('0 10 * * *', () => {
+  listingsRoutes.quietStaleListings().catch((err) => {
+    console.error('Quiet stale listings job failed:', err);
+  });
+});
 cron.schedule('0 12 * * *', expirePendingSaleConfirmations);
 cron.schedule('0 18 * * *', sendDailyDigests);
 cron.schedule('0 * * * *', notifyExpiredBoosts);
@@ -251,6 +257,12 @@ app.listen(PORT, () => {
   });
   ensureAppPrefsColumn().catch((err) => {
     console.error('Could not ensure app_prefs column:', err);
+  });
+  ensureBlockedUsersTable().catch((err) => {
+    console.error('Could not ensure blocked_users table:', err);
+  });
+  listingsRoutes.ensureQuietColumn().catch((err) => {
+    console.error('Could not ensure listing refreshed_at column:', err);
   });
   messagesRoutes.ensureOfferColumns().catch((err) => {
     console.error('Could not ensure offer columns:', err);
