@@ -245,6 +245,9 @@ app.listen(PORT, () => {
   listingsRoutes.ensureFeedIndexes().catch((err) => {
     console.error('Could not ensure feed indexes:', err);
   });
+  listingsRoutes.ensureRecentlyViewedTable().catch((err) => {
+    console.error('Could not ensure recently viewed table:', err);
+  });
   messagesRoutes.ensureOfferColumns().catch((err) => {
     console.error('Could not ensure offer columns:', err);
   });

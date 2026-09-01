@@ -52,6 +52,63 @@ async function ensureFeedIndexes() {
   await feedIndexesReady;
 }
 
+let recentlyViewedReady = null;
+async function ensureRecentlyViewedTable() {
+  if (!recentlyViewedReady) {
+    recentlyViewedReady = pool.query(`
+      CREATE TABLE IF NOT EXISTS pool6.recently_viewed (
+        user_id INTEGER NOT NULL REFERENCES pool6.users(id) ON DELETE CASCADE,
+        listing_id INTEGER NOT NULL REFERENCES pool6.listings(id) ON DELETE CASCADE,
+        viewed_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+        PRIMARY KEY (user_id, listing_id)
+      );
+      CREATE INDEX IF NOT EXISTS recently_viewed_user_viewed_idx
+        ON pool6.recently_viewed (user_id, viewed_at DESC);
+    `).then(() => {}).catch((err) => {
+      recentlyViewedReady = null;
+      throw err;
+    });
+  }
+  await recentlyViewedReady;
+}
+
+async function recordRecentView(userId, listingId) {
+  const uid = parseInt(userId, 10);
+  const lid = parseInt(listingId, 10);
+  if (!Number.isFinite(uid) || !Number.isFinite(lid) || uid <= 0 || lid <= 0) return;
+  await ensureRecentlyViewedTable();
+  await pool.query(
+    `INSERT INTO pool6.recently_viewed (user_id, listing_id, viewed_at)
+     VALUES ($1, $2, NOW())
+     ON CONFLICT (user_id, listing_id) DO UPDATE SET viewed_at = NOW()`,
+    [uid, lid]
+  );
+  await pool.query(
+    `DELETE FROM pool6.recently_viewed rv
+     WHERE rv.user_id = $1
+       AND rv.ctid NOT IN (
+         SELECT ctid FROM pool6.recently_viewed
+         WHERE user_id = $1
+         ORDER BY viewed_at DESC
+         LIMIT 12
+       )`,
+    [uid]
+  );
+}
+
+function mapRecentRows(rows) {
+  return slimListingPhotos(rows).map((row) => ({
+    id: row.id,
+    title: row.title,
+    price: row.price,
+    compare_at_price: row.compare_at_price,
+    photo: Array.isArray(row.photos) && row.photos[0] ? row.photos[0] : null,
+    photos: row.photos,
+    video_url: row.video_url,
+    status: row.status,
+  }));
+}
+
 function slimListingPhotos(rows) {
   if (!Array.isArray(rows)) return rows;
   for (const row of rows) {
@@ -280,6 +337,52 @@ router.put('/reports/:reportId/dismiss', requireAuth, async (req, res) => {
   }
 });
 
+router.get('/recent', requireAuth, async (req, res) => {
+  try {
+    await ensureRecentlyViewedTable();
+    const result = await pool.query(
+      `SELECT l.id, l.title, l.price, l.compare_at_price,
+              COALESCE(l.photos[1:1], '{}') AS photos, l.video_url, l.status
+       FROM pool6.recently_viewed rv
+       JOIN pool6.listings l ON l.id = rv.listing_id
+       WHERE rv.user_id = $1
+         AND l.status IN ('active', 'reserved', 'sold')
+       ORDER BY rv.viewed_at DESC
+       LIMIT 12`,
+      [req.userId]
+    );
+    res.json(mapRecentRows(result.rows));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load recently viewed.' });
+  }
+});
+
+router.post('/recent', requireAuth, async (req, res) => {
+  try {
+    const raw = Array.isArray(req.body && req.body.listing_ids) ? req.body.listing_ids : [];
+    const ids = [...new Set(raw.map((id) => parseInt(id, 10)).filter((id) => Number.isFinite(id) && id > 0))].slice(0, 12);
+    for (let i = ids.length - 1; i >= 0; i--) {
+      await recordRecentView(req.userId, ids[i]);
+    }
+    const result = await pool.query(
+      `SELECT l.id, l.title, l.price, l.compare_at_price,
+              COALESCE(l.photos[1:1], '{}') AS photos, l.video_url, l.status
+       FROM pool6.recently_viewed rv
+       JOIN pool6.listings l ON l.id = rv.listing_id
+       WHERE rv.user_id = $1
+         AND l.status IN ('active', 'reserved', 'sold')
+       ORDER BY rv.viewed_at DESC
+       LIMIT 12`,
+      [req.userId]
+    );
+    res.json(mapRecentRows(result.rows));
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not save recently viewed.' });
+  }
+});
+
 router.post('/:id/view', async (req, res) => {
   try {
     const result = await pool.query(
@@ -291,6 +394,12 @@ router.post('/:id/view', async (req, res) => {
     );
     if (result.rows.length === 0) {
       return res.status(404).json({ error: 'Listing not found.' });
+    }
+    const userId = requireAuth.userIdFromToken(req);
+    if (userId) {
+      recordRecentView(userId, req.params.id).catch((err) => {
+        console.error('Could not save recently viewed:', err);
+      });
     }
     res.json({ view_count: result.rows[0].view_count });
   } catch (err) {
@@ -824,3 +933,4 @@ router.delete('/:id', requireAuth, async (req, res) => {
 module.exports = router;
 module.exports.ensureListingVideoColumn = ensureListingVideoColumn;
 module.exports.ensureFeedIndexes = ensureFeedIndexes;
+module.exports.ensureRecentlyViewedTable = ensureRecentlyViewedTable;

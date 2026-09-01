@@ -67,4 +67,17 @@ async function requireAuth(req, res, next) {
   }
 }
 
+function userIdFromToken(req) {
+  const authHeader = req.headers['authorization'];
+  const token = authHeader && authHeader.split(' ')[1];
+  if (!token || !process.env.JWT_SECRET) return null;
+  try {
+    const decoded = jwt.verify(token, process.env.JWT_SECRET);
+    return decoded.userId || null;
+  } catch (e) {
+    return null;
+  }
+}
+
+requireAuth.userIdFromToken = userIdFromToken;
 module.exports = requireAuth;
