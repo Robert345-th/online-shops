@@ -1,0 +1,2 @@
+ALTER TABLE pool6.users
+  ADD COLUMN IF NOT EXISTS app_prefs JSONB NOT NULL DEFAULT '{}'::jsonb;

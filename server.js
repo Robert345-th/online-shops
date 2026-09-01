@@ -54,6 +54,7 @@ app.use('/wanted', wantedRoutes);
 
 const { router: followsRoutes, ensureShopFollowsTable } = require('./follows');
 const { ensureLastSeenColumns } = require('./user-presence');
+const { ensureAppPrefsColumn } = require('./user-prefs');
 const { ensureMarketplaceTables } = require('./marketplace-extras');
 const savedSearchesRoutes = require('./saved-searches');
 app.use('/saved-searches', savedSearchesRoutes);
@@ -247,6 +248,9 @@ app.listen(PORT, () => {
   });
   listingsRoutes.ensureRecentlyViewedTable().catch((err) => {
     console.error('Could not ensure recently viewed table:', err);
+  });
+  ensureAppPrefsColumn().catch((err) => {
+    console.error('Could not ensure app_prefs column:', err);
   });
   messagesRoutes.ensureOfferColumns().catch((err) => {
     console.error('Could not ensure offer columns:', err);

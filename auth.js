@@ -9,6 +9,7 @@ const {
   getSellerCompliance,
 } = require('./shop-verification');
 const { presencePublicFields } = require('./user-presence');
+const { getUserPrefs, mergeUserPrefs, prefsFromUser } = require('./user-prefs');
 const JWT_SECRET = process.env.JWT_SECRET;
 const AT = africastalking({
   apiKey: process.env.AT_API_KEY,
@@ -179,6 +180,7 @@ router.post('/verify-otp', async (req, res) => {
     res.json({
       user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status, shop_name: user.shop_name || null },
       token,
+      prefs: prefsFromUser(user),
     });
   } catch (err) {
     console.error(err);
@@ -320,7 +322,8 @@ router.post('/login', async (req, res) => {
     const token = jwt.sign({ userId: user.id }, JWT_SECRET, { expiresIn: '30d' });
     res.json({
       user: { id: user.id, name: user.name, phone: user.phone, is_admin: user.is_admin, account_type: user.account_type, shop_status: user.shop_status, shop_name: user.shop_name || null },
-      token
+      token,
+      prefs: prefsFromUser(user),
     });
   } catch (err) {
     console.error(err);
@@ -383,6 +386,29 @@ router.get('/presence-settings', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load presence settings.' });
+  }
+});
+
+router.get('/prefs', requireAuth, async (req, res) => {
+  try {
+    const prefs = await getUserPrefs(req.userId);
+    res.json({ prefs });
+  } catch (err) {
+    console.error(err);
+    res.status(500).json({ error: 'Could not load account settings.' });
+  }
+});
+
+router.put('/prefs', requireAuth, async (req, res) => {
+  try {
+    const prefs = await mergeUserPrefs(req.userId, req.body || {});
+    res.json({ prefs });
+  } catch (err) {
+    if (err && err.code === 'PREFS_TOO_LARGE') {
+      return res.status(413).json({ error: 'Those settings are too large to save.' });
+    }
+    console.error(err);
+    res.status(500).json({ error: 'Could not save account settings.' });
   }
 });
 
@@ -670,7 +696,8 @@ router.delete('/me', requireAuth, async (req, res) => {
            password_hash = 'DELETED',
            push_token = NULL,
            is_deleted = true,
-           deleted_at = NOW()
+           deleted_at = NOW(),
+           app_prefs = '{}'::jsonb
        WHERE id = $2`,
       [anonymizedPhone, req.userId]
     );
