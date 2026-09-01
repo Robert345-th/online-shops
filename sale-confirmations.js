@@ -4,6 +4,19 @@ const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 
+let soldAtReady = null;
+async function ensureSoldAtColumn() {
+  if (!soldAtReady) {
+    soldAtReady = pool
+      .query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ`)
+      .catch((err) => {
+        soldAtReady = null;
+        throw err;
+      });
+  }
+  await soldAtReady;
+}
+
 // GET - recent people the seller has chatted with (to pick who the buyer was)
 router.get('/recent-contacts', requireAuth, async (req, res) => {
   try {
@@ -98,18 +111,48 @@ router.get('/pending-count', requireAuth, async (req, res) => {
   }
 });
 
-// GET - public sold history for a seller profile
+// GET - public sold history for a seller profile (sold listings + confirmed sales)
 router.get('/seller/:sellerId/history', async (req, res) => {
   try {
-    const result = await pool.query(
-      `SELECT listing_title, confirmed_at
-       FROM pool6.sale_confirmations
-       WHERE seller_id = $1 AND status = 'confirmed'
-       ORDER BY confirmed_at DESC
-       LIMIT 30`,
-      [req.params.sellerId]
+    await ensureSoldAtColumn();
+    const [listingSold, confirmed] = await Promise.all([
+      pool.query(
+        `SELECT l.id AS listing_id, l.title AS listing_title, l.price, l.photos,
+                COALESCE(l.sold_at, l.date_posted) AS sold_at, l.location_label
+         FROM pool6.listings l
+         WHERE l.seller_id = $1 AND l.status = 'sold'
+         ORDER BY COALESCE(l.sold_at, l.date_posted) DESC
+         LIMIT 30`,
+        [req.params.sellerId]
+      ),
+      pool.query(
+        `SELECT listing_title, confirmed_at AS sold_at
+         FROM pool6.sale_confirmations
+         WHERE seller_id = $1 AND status = 'confirmed'
+         ORDER BY confirmed_at DESC
+         LIMIT 30`,
+        [req.params.sellerId]
+      ),
+    ]);
+
+    const titles = new Set(
+      listingSold.rows.map((row) => String(row.listing_title || '').trim().toLowerCase())
     );
-    res.json(result.rows);
+    const extra = confirmed.rows
+      .filter((row) => !titles.has(String(row.listing_title || '').trim().toLowerCase()))
+      .map((row) => ({
+        listing_id: null,
+        listing_title: row.listing_title,
+        price: null,
+        photos: null,
+        sold_at: row.sold_at,
+        location_label: null,
+      }));
+
+    const merged = listingSold.rows.concat(extra)
+      .sort((a, b) => new Date(b.sold_at) - new Date(a.sold_at))
+      .slice(0, 30);
+    res.json(merged);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not load sold history.' });

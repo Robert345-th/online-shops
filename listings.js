@@ -573,7 +573,13 @@ router.post('/:id/mark-sold', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You can only mark your own listings as sold.' });
     }
 
-    await pool.query(`UPDATE pool6.listings SET status = 'sold' WHERE id = $1`, [req.params.id]);
+    await pool.query(
+      `ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ`
+    );
+    await pool.query(
+      `UPDATE pool6.listings SET status = 'sold', sold_at = COALESCE(sold_at, NOW()) WHERE id = $1`,
+      [req.params.id]
+    );
 
     res.json({ success: true, status: 'sold' });
   } catch (err) {
@@ -599,7 +605,17 @@ router.put('/:id/status', requireAuth, async (req, res) => {
       return res.status(403).json({ error: 'You can only update your own listings.' });
     }
     const prevStatus = check.rows[0].status;
-    await pool.query('UPDATE pool6.listings SET status = $1 WHERE id = $2', [status, req.params.id]);
+    if (status === 'sold') {
+      await pool.query(
+        `ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS sold_at TIMESTAMPTZ`
+      );
+      await pool.query(
+        `UPDATE pool6.listings SET status = 'sold', sold_at = COALESCE(sold_at, NOW()) WHERE id = $1`,
+        [req.params.id]
+      );
+    } else {
+      await pool.query('UPDATE pool6.listings SET status = $1 WHERE id = $2', [status, req.params.id]);
+    }
     if (status === 'active' && prevStatus && prevStatus !== 'active') {
       const title = check.rows[0].title || 'A listing';
       notifyListingWatchers(
