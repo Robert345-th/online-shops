@@ -150,6 +150,9 @@ router.get('/', async (req, res) => {
   const q = String(req.query.q || '').trim();
   const category = String(req.query.category || '').trim();
   const filterCategory = category && category !== 'All';
+  const city = String(req.query.city || '').trim().replace(/[%_\\]/g, '').slice(0, 60);
+  const maxPriceRaw = parseFloat(req.query.max_price);
+  const maxPrice = Number.isFinite(maxPriceRaw) && maxPriceRaw > 0 ? maxPriceRaw : null;
 
   try {
     await ensureListingVideoColumn();
@@ -168,6 +171,14 @@ router.get('/', async (req, res) => {
     if (filterCategory) {
       params.push(category);
       extra += ` AND c.name = $${params.length}`;
+    }
+    if (!filterBySeller && city) {
+      params.push(city);
+      extra += ` AND COALESCE(l.location_label, '') ILIKE '%' || $${params.length} || '%'`;
+    }
+    if (!filterBySeller && maxPrice) {
+      params.push(maxPrice);
+      extra += ` AND l.price <= $${params.length}`;
     }
     if (!graceStillActive(settings.nrc_grace_period_end)) {
       extra += ` AND u.nrc_verified = true`;
@@ -220,7 +231,7 @@ router.get('/', async (req, res) => {
     `,
       params
     );
-    res.set('Cache-Control', (q || filterBySeller || viewerId)
+    res.set('Cache-Control', (q || filterBySeller || viewerId || city || maxPrice)
       ? 'private, max-age=8'
       : 'public, max-age=12, stale-while-revalidate=30');
     res.json(slimListingPhotos(result.rows));
