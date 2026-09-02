@@ -20,7 +20,6 @@ async function ensureListingVideoColumn() {
     videoColumnReady = Promise.all([
       pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS video_url TEXT`),
       pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS compare_at_price NUMERIC`),
-      pool.query(`ALTER TABLE pool6.listings ADD COLUMN IF NOT EXISTS refreshed_at TIMESTAMPTZ`),
     ]).then(() => {}).catch((err) => {
       videoColumnReady = null;
       throw err;
@@ -29,50 +28,13 @@ async function ensureListingVideoColumn() {
   await videoColumnReady;
 }
 
-let quietReady = null;
-async function ensureQuietColumn() {
-  await ensureListingVideoColumn();
-  if (!quietReady) {
-    quietReady = pool.query(
-      `UPDATE pool6.listings
-       SET refreshed_at = COALESCE(refreshed_at, date_posted, NOW())
-       WHERE refreshed_at IS NULL`
-    ).catch((err) => {
-      quietReady = null;
-      throw err;
-    });
-  }
-  await quietReady;
-}
-
-async function quietStaleListings() {
-  await ensureQuietColumn();
+async function restoreQuietListings() {
   const result = await pool.query(
-    `UPDATE pool6.listings
-     SET status = 'quiet'
-     WHERE status = 'active'
-       AND COALESCE(refreshed_at, date_posted) < NOW() - INTERVAL '21 days'
-       AND (boosted_until IS NULL OR boosted_until < NOW())
-     RETURNING id, seller_id, title`
+    `UPDATE pool6.listings SET status = 'active' WHERE status = 'quiet' RETURNING id`
   );
-  for (const row of result.rows) {
-    const title = String(row.title || 'Your listing').slice(0, 70);
-    sendPushNotification(
-      row.seller_id,
-      'Still selling this?',
-      `"${title}" was hidden from the feed. Open it and tap Still selling to put it back.`,
-      {
-        type: 'listing',
-        listingId: row.id,
-        url: `/listing.html?id=${row.id}`,
-        tag: `quiet-${row.id}`,
-      }
-    );
-  }
   if (result.rows.length) {
-    console.log(`Quieted ${result.rows.length} stale listing(s).`);
+    console.log(`Restored ${result.rows.length} quiet listing(s) to the feed.`);
   }
-  return result.rows.length;
 }
 
 let feedIndexesReady = null;
@@ -507,10 +469,6 @@ router.get('/:id', async (req, res) => {
     const viewerId = requireAuth.userIdFromToken(req);
     const isOwner = viewerId && Number(listing.seller_id) === Number(viewerId);
 
-    if (listing.status === 'quiet' && !isOwner) {
-      return res.status(404).json({ error: 'Listing not found.' });
-    }
-
     if (viewerId && !isOwner) {
       const blocked = await getBlockState(viewerId, listing.seller_id);
       listing.i_blocked_them = blocked.i_blocked_them;
@@ -663,8 +621,8 @@ router.post('/', requireAuth, async (req, res) => {
 
     const result = await pool.query(
       `INSERT INTO pool6.listings
-        (seller_id, title, description, price, category_id, photos, video_url, condition, latitude, longitude, location_label, refreshed_at)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, NOW())
+        (seller_id, title, description, price, category_id, photos, video_url, condition, latitude, longitude, location_label)
+       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
        RETURNING *`,
       [req.userId, title, description, price, category_id, photos || [], videoUrl, condition, latitude, longitude, location_label]
     );
@@ -871,15 +829,10 @@ router.put('/:id/status', requireAuth, async (req, res) => {
         `UPDATE pool6.listings SET status = 'sold', sold_at = COALESCE(sold_at, NOW()) WHERE id = $1`,
         [req.params.id]
       );
-    } else if (status === 'active') {
-      await ensureQuietColumn();
+    } else if (status === 'active' && prevStatus === 'reserved') {
       await pool.query(
-        `UPDATE pool6.listings
-         SET status = 'active',
-             date_posted = CASE WHEN $2 IN ('quiet', 'reserved') THEN NOW() ELSE date_posted END,
-             refreshed_at = NOW()
-         WHERE id = $1`,
-        [req.params.id, prevStatus]
+        `UPDATE pool6.listings SET status = 'active', date_posted = NOW() WHERE id = $1`,
+        [req.params.id]
       );
     } else {
       await pool.query('UPDATE pool6.listings SET status = $1 WHERE id = $2', [status, req.params.id]);
@@ -916,47 +869,6 @@ router.put('/:id/status', requireAuth, async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Could not update listing status.' });
-  }
-});
-
-router.post('/:id/refresh', requireAuth, async (req, res) => {
-  try {
-    await ensureQuietColumn();
-    const check = await pool.query(
-      'SELECT seller_id, status, title FROM pool6.listings WHERE id = $1',
-      [req.params.id]
-    );
-    if (check.rows.length === 0) {
-      return res.status(404).json({ error: 'Listing not found.' });
-    }
-    if (Number(check.rows[0].seller_id) !== Number(req.userId)) {
-      return res.status(403).json({ error: 'You can only update your own listings.' });
-    }
-    if (check.rows[0].status !== 'quiet') {
-      return res.status(400).json({ error: 'This listing is already on the feed.' });
-    }
-    await pool.query(
-      `UPDATE pool6.listings
-       SET status = 'active', date_posted = NOW(), refreshed_at = NOW()
-       WHERE id = $1`,
-      [req.params.id]
-    );
-    const title = check.rows[0].title || 'A listing';
-    notifyListingWatchers(
-      req.params.id,
-      'Back on ZedMarket',
-      `"${title}" is listed again.`,
-      {
-        type: 'listing',
-        listingId: parseInt(req.params.id, 10),
-        url: `/listing.html?id=${req.params.id}`,
-        tag: `watch-${req.params.id}`,
-      }
-    );
-    res.json({ success: true, status: 'active' });
-  } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Could not put this listing back on the feed.' });
   }
 });
 
@@ -1091,5 +1003,4 @@ module.exports = router;
 module.exports.ensureListingVideoColumn = ensureListingVideoColumn;
 module.exports.ensureFeedIndexes = ensureFeedIndexes;
 module.exports.ensureRecentlyViewedTable = ensureRecentlyViewedTable;
-module.exports.quietStaleListings = quietStaleListings;
-module.exports.ensureQuietColumn = ensureQuietColumn;
+module.exports.restoreQuietListings = restoreQuietListings;
