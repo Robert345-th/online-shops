@@ -1,5 +1,6 @@
 const pool = require('./db');
 const RAW_PHOTO_POOLS = require('./sample-photo-pools.json');
+const { describeListing, locationLabel, carSpecsFor } = require('./sample-ad-copy');
 
 function photoAllowed(url) {
   const raw = String(url || '');
@@ -243,14 +244,20 @@ function buildExtraSamples() {
         photo,
         town,
         condition,
-        `${desc} Selling in ${town}.`,
+        describeListing(`${name} — ${town}`, town),
       ]);
     }
   }
   return extra;
 }
 
-const CATALOG = assignUniquePhotos(BASE_CATALOG.concat(buildExtraSamples()));
+const CATALOG = assignUniquePhotos(
+  BASE_CATALOG.concat(buildExtraSamples()).map((row) => {
+    const copy = row.slice();
+    copy[6] = describeListing(copy[0], copy[4]);
+    return copy;
+  })
+);
 
 function catId(cats, name) {
   const row = cats.find((c) => c.name === name);
@@ -330,7 +337,7 @@ function listingInsertParams(ownerId, cats, item, minutesAgo) {
     condition,
     place.lat,
     place.lng,
-    town,
+    locationLabel(title, town),
     String(minutesAgo),
   ];
 }
@@ -457,7 +464,7 @@ async function seedLayoutSampleListings() {
         condition,
         place.lat,
         place.lng,
-        town,
+        locationLabel(row.title, town),
         owner.id,
       ]
     );
@@ -480,6 +487,36 @@ async function seedLayoutSampleListings() {
   }
   if (added) console.log(`Added ${added} sample listing(s) on ${SAMPLE_OWNER_PHONE}.`);
   else console.log(`Sample catalog already present (${haveTitles.size} existing).`);
+
+  await seedCarDetails();
+}
+
+async function seedCarDetails() {
+  const cars = CATALOG.filter((item) => item[2] === 'Cars');
+  let n = 0;
+  for (const item of cars) {
+    const specs = carSpecsFor(item[0], item[4]);
+    if (!specs) continue;
+    const found = await pool.query(
+      `SELECT id FROM pool6.listings
+        WHERE is_layout_sample = true AND title = $1
+        LIMIT 1`,
+      [item[0]]
+    );
+    if (!found.rows[0]) continue;
+    await pool.query(
+      `INSERT INTO pool6.car_details (listing_id, make, model, year, mileage)
+       VALUES ($1, $2, $3, $4, $5)
+       ON CONFLICT (listing_id) DO UPDATE
+         SET make = EXCLUDED.make,
+             model = EXCLUDED.model,
+             year = EXCLUDED.year,
+             mileage = EXCLUDED.mileage`,
+      [found.rows[0].id, specs.make, specs.model, specs.year, specs.mileage]
+    );
+    n += 1;
+  }
+  if (n) console.log(`Filled car details on ${n} sample car listing(s).`);
 }
 
 module.exports = { seedLayoutSampleListings };
