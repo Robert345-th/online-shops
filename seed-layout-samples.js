@@ -1,8 +1,14 @@
 const pool = require('./db');
 
 const PHOTOS = {
-  phone: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=900&q=80',
-  samsung: 'https://images.unsplash.com/photo-1511707171634-5f897ff02aa9?auto=format&fit=crop&w=900&q=80',
+  iphone: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=900&q=80',
+  iphone12: 'https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?auto=format&fit=crop&w=900&q=80',
+  samsung: 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?auto=format&fit=crop&w=900&q=80',
+  tecno: 'https://upload.wikimedia.org/wikipedia/commons/2/26/Spark_8.png',
+  tecno2: 'https://upload.wikimedia.org/wikipedia/commons/2/27/Back_of_Spark_10_Pro.png',
+  itel: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Itel_A50_front.jpg/960px-Itel_A50_front.jpg',
+  infinix: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/89/Infinix_Hot_8.jpg/960px-Infinix_Hot_8.jpg',
+  tablet: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=900&q=80',
   tv: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=900&q=80',
   laptop: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=80',
   fridge: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80',
@@ -59,9 +65,9 @@ function priceInTown(base, town) {
 // Street / classifieds prices (Zambia 2026): used phones below shop retail,
 // older used cars from local ads, mealie meal near ZamStats/JCTR.
 const BASE_CATALOG = [
-  ['iPhone 13', 6500, 'Electronics', 'phone', 'Lusaka', 'Pre-owned', 'Selling my iPhone 13. Battery is still fine.'],
+  ['iPhone 13', 6500, 'Electronics', 'iphone', 'Lusaka', 'Pre-owned', 'Selling my iPhone 13. Battery is still fine.'],
   ['Samsung A54', 3800, 'Electronics', 'samsung', 'Kitwe', 'Pre-owned', 'Samsung A54, used but clean. No cracks.'],
-  ['Tecno Spark 20', 2200, 'Electronics', 'phone', 'Ndola', 'New', 'Tecno Spark 20, still new in box.'],
+  ['Tecno Spark 20', 2200, 'Electronics', 'tecno2', 'Ndola', 'New', 'Tecno Spark 20, still new in box.'],
   ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Lusaka', 'New', '32 inch Hisense. Working well.'],
   ['HP laptop', 4500, 'Electronics', 'laptop', 'Lusaka', 'Pre-owned', 'HP laptop for school or office. Used.'],
   ['PlayStation 4', 2800, 'Electronics', 'speaker', 'Kitwe', 'Pre-owned', 'PS4 with one pad. Used.'],
@@ -70,7 +76,7 @@ const BASE_CATALOG = [
   ['Microwave', 750, 'Electronics', 'fridge', 'Kabwe', 'New', 'Microwave, barely used.'],
   ['Generator 2kVA', 5500, 'Electronics', 'generator', 'Solwezi', 'New', '2kVA generator. Good for load shedding.'],
   ['WiFi router', 250, 'Electronics', 'speaker', 'Lusaka', 'New', 'WiFi router. Simple home use.'],
-  ['Tablet', 1200, 'Electronics', 'phone', 'Livingstone', 'Pre-owned', 'Android tablet, used for kids.'],
+  ['Tablet', 1200, 'Electronics', 'tablet', 'Livingstone', 'Pre-owned', 'Android tablet, used for kids.'],
   ['Printer', 900, 'Electronics', 'laptop', 'Kitwe', 'Pre-owned', 'Home printer. Black ink was replaced.'],
   ['Car battery', 750, 'Electronics', 'generator', 'Chingola', 'New', 'Car battery, new.'],
   ['Extension reel', 150, 'Electronics', 'generator', 'Mongu', 'New', 'Extension reel, 20 metres.'],
@@ -115,13 +121,13 @@ const BASE_CATALOG = [
 function buildExtraSamples() {
   const townNames = Object.keys(TOWNS);
   const templates = [
-    ['Itel A18', 550, 'Electronics', 'phone', 'Pre-owned', 'Itel A18. Used, still working.'],
-    ['Tecno Pop 8', 950, 'Electronics', 'phone', 'Pre-owned', 'Tecno Pop 8. Used daily.'],
-    ['Tecno Spark 10', 1600, 'Electronics', 'phone', 'Pre-owned', 'Tecno Spark 10. No cracks.'],
-    ['Infinix Hot 12', 1400, 'Electronics', 'phone', 'Pre-owned', 'Infinix Hot 12. Strong battery.'],
+    ['Itel A18', 550, 'Electronics', 'itel', 'Pre-owned', 'Itel A18. Used, still working.'],
+    ['Tecno Pop 8', 950, 'Electronics', 'tecno', 'Pre-owned', 'Tecno Pop 8. Used daily.'],
+    ['Tecno Spark 10', 1600, 'Electronics', 'tecno2', 'Pre-owned', 'Tecno Spark 10. No cracks.'],
+    ['Infinix Hot 12', 1400, 'Electronics', 'infinix', 'Pre-owned', 'Infinix Hot 12. Strong battery.'],
     ['Samsung A14', 2500, 'Electronics', 'samsung', 'Pre-owned', 'Samsung A14. Used, clean.'],
-    ['iPhone 11', 3200, 'Electronics', 'phone', 'Pre-owned', 'iPhone 11. Face ID working.'],
-    ['iPhone 12', 4500, 'Electronics', 'phone', 'Pre-owned', 'iPhone 12. Used, battery okay.'],
+    ['iPhone 11', 3200, 'Electronics', 'iphone12', 'Pre-owned', 'iPhone 11. Face ID working.'],
+    ['iPhone 12', 4500, 'Electronics', 'iphone12', 'Pre-owned', 'iPhone 12. Used, battery okay.'],
     ['Samsung A04', 1800, 'Electronics', 'samsung', 'New', 'Samsung A04. Still new.'],
     ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Pre-owned', '32 inch TV. Used at home.'],
     ['Skyworth 43 inch TV', 4200, 'Electronics', 'tv', 'Pre-owned', '43 inch TV. Working well.'],
@@ -172,7 +178,7 @@ function catId(cats, name) {
 }
 
 function photoFor(key) {
-  return PHOTOS[key] || PHOTOS.phone;
+  return PHOTOS[key] || PHOTOS.samsung;
 }
 
 const SAMPLE_OWNER_PHONE = '0750076052';
