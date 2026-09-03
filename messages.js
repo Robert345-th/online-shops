@@ -5,6 +5,7 @@ const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
 const { presencePublicFields } = require('./user-presence');
 const { ensureBlockedUsersTable, getBlockState } = require('./user-blocks');
+const { recordReplyTime, isChatMuted, loadChatPrefs, ensureMarketplaceTables } = require('./marketplace-extras');
 
 let offerColumnsReady = null;
 async function ensureOfferColumns() {
