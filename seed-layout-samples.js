@@ -1,5 +1,36 @@
 const pool = require('./db');
-const PHOTO_POOLS = require('./sample-photo-pools.json');
+const RAW_PHOTO_POOLS = require('./sample-photo-pools.json');
+
+function photoAllowed(url) {
+  const raw = String(url || '');
+  if (!raw) return false;
+  const u = raw.toLowerCase();
+  if (/unsplash|pexels|picsum|loremflickr|placeholder/.test(u)) return false;
+  let name = u;
+  try {
+    name = decodeURIComponent(raw).toLowerCase();
+  } catch (_) {}
+  const banned = [
+    'woman', 'women', 'girl', 'portrait', 'selfie', 'people', 'person', 'crowd',
+    'holding', 'student', 'mother', 'moeder', 'father',
+    'dress-up_fun', 'great_day_in_new_york', 'anja_bavaria', 'anastasiia',
+    'about_the_brand', 'fashion_brand', 'productive_evening', 'grizzly_gauntlet',
+    'for_tora', 'playpad', 'iowa_state_fair', 'dzien_dziecka',
+    'bathers', 'pride_parade', 'pram_pushers', 'kinderwagen_steekt',
+    'repairer', 'live_fire', 'howitzer', 'press_conference',
+    'space_of_my_own', 'news_studio', 'photothon', 'eames_demetrios',
+    'walking_on_the', 'feet_on_the_seat', 'skinny_jeans', 'walk_in_the_snow',
+    'bilbao_metro', 'alice_in_philcoland', 'berrit_arnold',
+  ];
+  return !banned.some((tok) => name.includes(tok));
+}
+
+const PHOTO_POOLS = Object.fromEntries(
+  Object.entries(RAW_PHOTO_POOLS).map(([key, urls]) => [
+    key,
+    [...new Set((urls || []).filter(photoAllowed))],
+  ])
+);
 
 const KIND_TO_POOL = {
   iphone: 'iphone',
@@ -41,30 +72,33 @@ function assignUniquePhotos(rows) {
     'sofa', 'bed', 'table', 'chair', 'maize', 'produce', 'bike', 'tablet',
   ];
   leftoverOrder.forEach((name) => {
-    (PHOTO_POOLS[name] || []).forEach((url) => leftovers.push(url));
+    (PHOTO_POOLS[name] || []).filter(photoAllowed).forEach((url) => leftovers.push(url));
   });
+  let reuseAt = 0;
 
   function take(poolName) {
-    const bucket = PHOTO_POOLS[poolName] || [];
+    const bucket = (PHOTO_POOLS[poolName] || []).filter(photoAllowed);
     let i = cursor[poolName] || 0;
     while (i < bucket.length) {
       const url = bucket[i];
       i += 1;
       cursor[poolName] = i;
-      if (!used.has(url)) {
+      if (photoAllowed(url) && !used.has(url)) {
         used.add(url);
         return url;
       }
     }
     for (const url of leftovers) {
-      if (!used.has(url)) {
+      if (photoAllowed(url) && !used.has(url)) {
         used.add(url);
         return url;
       }
     }
-    const fallback = (PHOTO_POOLS.car && PHOTO_POOLS.car[0]) || (PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '';
-    used.add(fallback);
-    return fallback;
+    const cycle = leftovers.length ? leftovers : bucket;
+    if (!cycle.length) return '';
+    const url = cycle[reuseAt % cycle.length];
+    reuseAt += 1;
+    return photoAllowed(url) ? url : '';
   }
 
   return rows.map((row) => {
@@ -224,8 +258,10 @@ function catId(cats, name) {
 }
 
 function photoFor(keyOrUrl) {
-  if (keyOrUrl && String(keyOrUrl).indexOf('http') === 0) return keyOrUrl;
-  const bucket = PHOTO_POOLS.android || [];
+  if (keyOrUrl && String(keyOrUrl).indexOf('http') === 0) {
+    return photoAllowed(keyOrUrl) ? keyOrUrl : ((PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '');
+  }
+  const bucket = (PHOTO_POOLS.android || []).filter(photoAllowed);
   return bucket[0] || (PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '';
 }
 
@@ -361,6 +397,7 @@ async function seedLayoutSampleListings() {
           title = 'Toyota Vitz 2010 — Livingstone'
           OR title LIKE 'Honda Fit 2011%'
           OR photos::text ~* 'Bugatti|Veyron|Lotus|Lamborghini|Ferrari|Porsche|McLaren|Elise|Spyder|Corvette|Mustang|Camaro'
+          OR photos::text ~* 'unsplash|pexels|picsum|loremflickr'
         )`
   );
 
