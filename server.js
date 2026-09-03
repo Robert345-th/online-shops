@@ -17,6 +17,7 @@ const authRoutes = require('./auth');
 app.use('/auth', authRoutes);
 
 const listingsRoutes = require('./listings');
+const { seedLayoutSampleListings } = require('./seed-layout-samples');
 app.use('/listings', listingsRoutes);
 
 const favoritesRoutes = require('./favorites');
@@ -258,6 +259,9 @@ app.listen(PORT, () => {
   });
   listingsRoutes.restoreQuietListings().catch((err) => {
     console.error('Could not restore quiet listings:', err);
+  });
+  seedLayoutSampleListings().catch((err) => {
+    console.error('Could not add sample listings:', err);
   });
   messagesRoutes.ensureOfferColumns().catch((err) => {
     console.error('Could not ensure offer columns:', err);
