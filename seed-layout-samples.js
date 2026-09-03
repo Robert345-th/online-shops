@@ -36,10 +36,13 @@ const PHOTO_POOLS = Object.fromEntries(
 
 const KIND_TO_POOL = {
   iphone: 'iphone',
-  iphone12: 'iphone',
-  samsung: 'samsung',
+  iphone12: 'iphone12',
+  iphone13: 'iphone13',
+  samsung: 'samsungA',
   tecno: 'tecno',
-  tecno2: 'tecno',
+  tecno2: 'spark20',
+  spark20: 'spark20',
+  samsungA: 'samsungA',
   itel: 'itel',
   infinix: 'infinix',
   tablet: 'tablet',
@@ -156,9 +159,10 @@ function priceInTown(base, town) {
 // Street / classifieds prices (Zambia 2026): used phones below shop retail,
 // older used cars from local ads, mealie meal near ZamStats/JCTR.
 const BASE_CATALOG = [
-  ['iPhone 13', 6500, 'Electronics', 'iphone', 'Lusaka', 'Pre-owned', 'Selling my iPhone 13. Battery is still fine.'],
-  ['Samsung A54', 3800, 'Electronics', 'samsung', 'Kitwe', 'Pre-owned', 'Samsung A54, used but clean. No cracks.'],
-  ['Tecno Spark 20', 2200, 'Electronics', 'tecno2', 'Ndola', 'New', 'Tecno Spark 20, still new in box.'],
+  ['iPhone 13', 6500, 'Electronics', 'iphone13', 'Lusaka', 'Pre-owned', 'Selling my iPhone 13. Battery is still fine.'],
+  ['iPhone 12', 4500, 'Electronics', 'iphone12', 'Ndola', 'Pre-owned', 'iPhone 12. Used, battery okay.'],
+  ['Samsung A54', 3800, 'Electronics', 'samsungA', 'Kitwe', 'Pre-owned', 'Samsung A54, used but clean. No cracks.'],
+  ['Tecno Spark 20', 2200, 'Electronics', 'spark20', 'Chipata', 'New', 'Tecno Spark 20, still new in box.'],
   ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Lusaka', 'New', '32 inch Hisense. Working well.'],
   ['HP laptop', 4500, 'Electronics', 'laptop', 'Lusaka', 'Pre-owned', 'HP laptop for school or office. Used.'],
   ['PlayStation 4', 2800, 'Electronics', 'console', 'Kitwe', 'Pre-owned', 'PS4 with one pad. Used.'],
@@ -204,14 +208,6 @@ const BASE_CATALOG = [
 function buildExtraSamples() {
   const townNames = Object.keys(TOWNS);
   const templates = [
-    ['Itel A18', 550, 'Electronics', 'itel', 'Pre-owned', 'Itel A18. Used, still working.'],
-    ['Tecno Pop 8', 950, 'Electronics', 'tecno', 'Pre-owned', 'Tecno Pop 8. Used daily.'],
-    ['Tecno Spark 10', 1600, 'Electronics', 'tecno2', 'Pre-owned', 'Tecno Spark 10. No cracks.'],
-    ['Infinix Hot 12', 1400, 'Electronics', 'infinix', 'Pre-owned', 'Infinix Hot 12. Strong battery.'],
-    ['Samsung A14', 2500, 'Electronics', 'samsung', 'Pre-owned', 'Samsung A14. Used, clean.'],
-    ['iPhone 11', 3200, 'Electronics', 'iphone12', 'Pre-owned', 'iPhone 11. Face ID working.'],
-    ['iPhone 12', 4500, 'Electronics', 'iphone12', 'Pre-owned', 'iPhone 12. Used, battery okay.'],
-    ['Samsung A04', 1800, 'Electronics', 'samsung', 'New', 'Samsung A04. Still new.'],
     ['Dell laptop', 3800, 'Electronics', 'laptop', 'Pre-owned', 'Dell laptop. For school.'],
     ['DSTV decoder', 450, 'Electronics', 'decoder', 'Pre-owned', 'DSTV decoder. Used.'],
     ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
@@ -420,6 +416,17 @@ async function seedLayoutSampleListings() {
       OR title LIKE 'Double bed%'
       OR title LIKE 'Hisense 32 inch TV — %'
       OR title LIKE 'Skyworth%'
+      OR title LIKE 'Itel %'
+      OR title LIKE 'Tecno Pop%'
+      OR title LIKE 'Tecno Spark 10%'
+      OR title LIKE 'Tecno Spark 20 — %'
+      OR title LIKE 'Infinix%'
+      OR title LIKE 'Samsung A14%'
+      OR title LIKE 'Samsung A04%'
+      OR title LIKE 'Samsung A54 — %'
+      OR title LIKE 'iPhone 11%'
+      OR title LIKE 'iPhone 12 — %'
+      OR title LIKE 'iPhone 13 — %'
       OR photos::text ~* 'Log_Furniture_Queen_Bed'
     )`;
   await pool.query(

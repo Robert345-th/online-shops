@@ -52,6 +52,9 @@ const BASE_COPY = {
   'iPhone 13': (town) =>
     `iPhone 13, 128GB, midnight. Battery health is about 86%. Face ID works. No iCloud lock, you can put your own Apple ID.\n\nCharger is included, box is not. Screen has no cracks. Small mark on the back near the camera. I used it for two years, now I am changing phone.\n\n${pickup(town, 'iPhone 13')} Price is K6,500.`,
 
+  'iPhone 12': (town) =>
+    `iPhone 12, 128GB, black. Battery health is about 88%. Face ID and True Tone working. No iCloud lock.\n\nCharger included, no box. Small mark on the aluminium edge. Clean, used by me.\n\n${pickup(town, 'iPhone 12')} Price is K4,500.`,
+
   'Samsung A54': (town) =>
     `Samsung Galaxy A54 5G, 128GB, 6GB RAM. Used but clean. No cracks on the screen or back. Battery still lasts a full day with normal use.\n\nComes with charger. Dual SIM, I was using Airtel and MTN. Fingerprint and face unlock both work.\n\n${pickup(town, 'Samsung A54')} Not swapping.`,
 

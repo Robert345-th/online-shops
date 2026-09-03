@@ -3,26 +3,17 @@
     "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/46/Alcatel_Pixi_4_%285%29_4G.JPG/960px-Alcatel_Pixi_4_%285%29_4G.JPG",
     "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/47/Xiaomi%2C_Realme%2C_Infinix%2C_Poco_and_Motorola_Smartphones_in_Zabrze%2C_Silesian_Voivodeship%2C_Poland%2C_March_2024.jpg/960px-Xiaomi%2C_Realme%2C_Infinix%2C_Poco_and_Motorola_Smartphones_in_Zabrze%2C_Silesian_Voivodeship%2C_Poland%2C_March_2024.jpg"
   ],
-  "iphone": [
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8d/Apple_iPhone_11_-_Tischkante.jpg/960px-Apple_iPhone_11_-_Tischkante.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8e/Back_view_of_iPhone_11_white.jpg/960px-Back_view_of_iPhone_11_white.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/47/IPhone_11.jpeg/960px-IPhone_11.jpeg",
-    "https://upload.wikimedia.org/wikipedia/commons/c/cc/IPhone_11_Liquid_Retina_HD_LCD_Display_%28100X_Mag.%29_with_Screen_Defect.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/11/IPhone_11_Product_RED.jpg/960px-IPhone_11_Product_RED.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/08/IPhone_11_Product_Red_128g.jpg/960px-IPhone_11_Product_Red_128g.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/48/IPhone_11_RED.jpg/960px-IPhone_11_RED.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/09/IPhone_11_all_color.jpg/960px-IPhone_11_all_color.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/0/0a/IPhone_12_-_2.jpg/960px-IPhone_12_-_2.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/8a/IPhone_12_-_3.jpg/960px-IPhone_12_-_3.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cf/IPhone_12_Black_256g.jpg/960px-IPhone_12_Black_256g.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5a/IPhone_12_Green_128g.jpg/960px-IPhone_12_Green_128g.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/b/bc/IPhone_12_screen_removed.jpg/960px-IPhone_12_screen_removed.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/8/86/Rear_3_lenses_of_an_iPhone_12.jpg/960px-Rear_3_lenses_of_an_iPhone_12.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1e/IPhone_13%2C_January_28%2C_2024.jpg/960px-IPhone_13%2C_January_28%2C_2024.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/3/3c/IPhone_13.jpg/960px-IPhone_13.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/5/5e/IPhone_13_White_256g.jpg/960px-IPhone_13_White_256g.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/e/e2/IPhone_13_and_iPhone_14_Plus.jpg/960px-IPhone_13_and_iPhone_14_Plus.jpg",
-    "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/19/IPhone_13_camera_lens_group.jpg/960px-IPhone_13_camera_lens_group.jpg"
+  "iphone13": [
+    "https://thumb.wikimedia.org/wikipedia/commons/thumb/1/1e/IPhone_13%2C_January_28%2C_2024.jpg/960px-IPhone_13%2C_January_28%2C_2024.jpg"
+  ],
+  "iphone12": [
+    "https://thumb.wikimedia.org/wikipedia/commons/thumb/c/cf/IPhone_12_Black_256g.jpg/960px-IPhone_12_Black_256g.jpg"
+  ],
+  "samsungA": [
+    "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/42/Galaxy_A16_front.jpg/960px-Galaxy_A16_front.jpg"
+  ],
+  "spark20": [
+    "https://upload.wikimedia.org/wikipedia/commons/1/17/Tecno_Spark_20.png"
   ],
   "car": [
     "https://thumb.wikimedia.org/wikipedia/commons/thumb/4/46/2008_Toyota_Corolla_Altis_1.6_V_20221008.jpg/960px-2008_Toyota_Corolla_Altis_1.6_V_20221008.jpg",
