@@ -22,6 +22,7 @@ function photoAllowed(url) {
     'space_of_my_own', 'news_studio', 'photothon', 'eames_demetrios',
     'walking_on_the', 'feet_on_the_seat', 'skinny_jeans', 'walk_in_the_snow',
     'bilbao_metro', 'alice_in_philcoland', 'berrit_arnold',
+    'abandoned_tv', '1990s_television', '4_television', 'family_appliance',
   ];
   return !banned.some((tok) => name.includes(tok));
 }
@@ -421,6 +422,7 @@ async function seedLayoutSampleListings() {
         AND (
           photos::text ~* 'Bugatti|Veyron|Lotus|Lamborghini|Ferrari|Porsche|McLaren|Elise|Spyder|Corvette|Mustang|Camaro'
           OR photos::text ~* 'unsplash|pexels|picsum|loremflickr'
+          OR photos::text ~* 'Abandoned_TV|1990s_Television|4_TELEVISION|Family_Appliance'
         )`
   );
 
