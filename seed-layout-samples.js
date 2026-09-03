@@ -34,7 +34,14 @@ function assignUniquePhotos(rows) {
   const cursor = {};
   const used = new Set();
   const leftovers = [];
-  Object.values(PHOTO_POOLS).forEach((urls) => leftovers.push(...urls));
+  const leftoverOrder = [
+    'tecno', 'itel', 'infinix', 'samsung', 'android', 'iphone',
+    'car', 'pickup', 'tv', 'laptop', 'fridge', 'generator', 'speaker',
+    'sofa', 'bed', 'table', 'chair', 'maize', 'produce', 'bike', 'tablet',
+  ];
+  leftoverOrder.forEach((name) => {
+    (PHOTO_POOLS[name] || []).forEach((url) => leftovers.push(url));
+  });
 
   function take(poolName) {
     const bucket = PHOTO_POOLS[poolName] || [];
@@ -54,7 +61,7 @@ function assignUniquePhotos(rows) {
         return url;
       }
     }
-    const fallback = `https://picsum.photos/seed/zm${used.size + 1}/900/700`;
+    const fallback = (PHOTO_POOLS.car && PHOTO_POOLS.car[0]) || (PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '';
     used.add(fallback);
     return fallback;
   }
@@ -221,7 +228,7 @@ function catId(cats, name) {
 function photoFor(keyOrUrl) {
   if (keyOrUrl && String(keyOrUrl).indexOf('http') === 0) return keyOrUrl;
   const bucket = PHOTO_POOLS.android || [];
-  return bucket[0] || '';
+  return bucket[0] || (PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '';
 }
 
 const SAMPLE_OWNER_PHONE = '0750076052';
