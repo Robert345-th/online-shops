@@ -187,7 +187,6 @@ const BASE_CATALOG = [
   ['Chitenge wraps', 90, 'Clothing', 'dress', 'Mongu', 'New', 'Chitenge wraps. New.'],
   ['Work boots', 350, 'Clothing', 'shoes', 'Chingola', 'New', 'Work boots. New.'],
   ['Baby clothes pack', 80, 'Clothing', 'baby', 'Lusaka', 'New', 'Pack of baby clothes.'],
-  ['50kg maize', 280, 'Produce', 'maize', 'Chipata', 'New', '50kg maize grain. This season.'],
   ['Tomatoes crate', 120, 'Produce', 'produce', 'Lusaka', 'New', 'Crate of tomatoes. Fresh.'],
   ['Cooking oil 20L', 650, 'Produce', 'oil', 'Ndola', 'New', '20 litre cooking oil.'],
   ['Charcoal bags', 90, 'Produce', 'charcoal', 'Kabwe', 'New', 'Small bags of charcoal.'],
@@ -220,15 +219,12 @@ function buildExtraSamples() {
     ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
     ['Kettle', 180, 'Electronics', 'kettle', 'New', 'Electric kettle. New.'],
     ['Sofa 3 piece', 2500, 'Furniture', 'sofa', 'Pre-owned', '3 piece sofa. Used.'],
-    ['Double bed', 1600, 'Furniture', 'bed', 'Pre-owned', 'Double bed. Used.'],
     ['Wardrobe 2 door', 1200, 'Furniture', 'wardrobe', 'Pre-owned', '2 door wardrobe. Used.'],
     ['Dining 4 chairs', 1800, 'Furniture', 'table', 'Pre-owned', 'Dining table with 4 chairs.'],
     ['Football jersey', 120, 'Clothing', 'jersey', 'New', 'Football jersey. New.'],
     ['Ladies chitenge dress', 150, 'Clothing', 'dress', 'New', 'Chitenge dress. New.'],
     ['Canvas sneakers', 200, 'Clothing', 'shoes', 'New', 'Canvas sneakers. Size 41.'],
     ['School shoes size 4', 100, 'Clothing', 'shoes', 'New', 'School shoes. Size 4.'],
-    ['Breakfast mealie meal 25kg', 250, 'Produce', 'maize', 'New', '25kg breakfast mealie meal.'],
-    ['Roller mealie meal 25kg', 200, 'Produce', 'maize', 'New', '25kg roller mealie meal.'],
   ];
   const extra = [];
   for (const tmpl of templates) {
@@ -415,6 +411,22 @@ async function seedLayoutSampleListings() {
       WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${extraCarFilter})`
   ).catch(() => {});
   await pool.query(`DELETE FROM pool6.listings WHERE ${extraCarFilter}`);
+
+  const droppedSampleFilter = `
+    is_layout_sample = true
+    AND (
+      title = '50kg maize'
+      OR title LIKE '50kg maize — %'
+      OR title LIKE 'Breakfast mealie meal%'
+      OR title LIKE 'Roller mealie meal%'
+      OR title LIKE 'Double bed%'
+      OR photos::text ~* 'Log_Furniture_Queen_Bed'
+    )`;
+  await pool.query(
+    `DELETE FROM pool6.listing_watches
+      WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${droppedSampleFilter})`
+  ).catch(() => {});
+  await pool.query(`DELETE FROM pool6.listings WHERE ${droppedSampleFilter}`);
 
   await pool.query(
     `DELETE FROM pool6.listings
