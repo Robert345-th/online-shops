@@ -204,6 +204,7 @@ function buildExtraSamples() {
       if (name.indexOf('Honda Fit') === 0) {
         price = Math.min(115000, Math.max(100000, price));
       }
+      if (name === 'Toyota Vitz 2010' && town === 'Livingstone') continue;
       extra.push([
         `${name} — ${town}`,
         price,
@@ -355,6 +356,15 @@ async function seedLayoutSampleListings() {
       WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${landSampleFilter})`
   ).catch(() => {});
   await pool.query(`DELETE FROM pool6.listings WHERE ${landSampleFilter}`);
+
+  await pool.query(
+    `DELETE FROM pool6.listings
+      WHERE is_layout_sample = true
+        AND (
+          title = 'Toyota Vitz 2010 — Livingstone'
+          OR photos::text ~* 'Bugatti|Veyron|Lotus|Lamborghini|Ferrari|Porsche|McLaren|Elise|Spyder|Corvette|Mustang|Camaro'
+        )`
+  );
 
   const owner = await findSampleOwner();
   if (!owner) {
