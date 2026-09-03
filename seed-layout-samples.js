@@ -1,33 +1,70 @@
 const pool = require('./db');
+const PHOTO_POOLS = require('./sample-photo-pools.json');
 
-const PHOTOS = {
-  iphone: 'https://images.unsplash.com/photo-1592750475338-74b7b21085ab?auto=format&fit=crop&w=900&q=80',
-  iphone12: 'https://images.unsplash.com/photo-1510557880182-3d4d3cba35a5?auto=format&fit=crop&w=900&q=80',
-  samsung: 'https://images.unsplash.com/photo-1610945415295-d9bbf067e59c?auto=format&fit=crop&w=900&q=80',
-  tecno: 'https://upload.wikimedia.org/wikipedia/commons/2/26/Spark_8.png',
-  tecno2: 'https://upload.wikimedia.org/wikipedia/commons/2/27/Back_of_Spark_10_Pro.png',
-  itel: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/5/59/Itel_A50_front.jpg/960px-Itel_A50_front.jpg',
-  infinix: 'https://thumb.wikimedia.org/wikipedia/commons/thumb/8/89/Infinix_Hot_8.jpg/960px-Infinix_Hot_8.jpg',
-  tablet: 'https://images.unsplash.com/photo-1544244015-0df4b3ffc6b0?auto=format&fit=crop&w=900&q=80',
-  tv: 'https://images.unsplash.com/photo-1593359677879-a4bb92f829d1?auto=format&fit=crop&w=900&q=80',
-  laptop: 'https://images.unsplash.com/photo-1517336714731-489689fd1ca8?auto=format&fit=crop&w=900&q=80',
-  fridge: 'https://images.unsplash.com/photo-1571175443880-49e1d25b2bc5?auto=format&fit=crop&w=900&q=80',
-  speaker: 'https://images.unsplash.com/photo-1608043152269-423dbba4e7e1?auto=format&fit=crop&w=900&q=80',
-  car: 'https://images.unsplash.com/photo-1621007947382-bb3c3994e3fb?auto=format&fit=crop&w=900&q=80',
-  hilux: 'https://images.unsplash.com/photo-1559416523-140ddc3d238c?auto=format&fit=crop&w=900&q=80',
-  sofa: 'https://images.unsplash.com/photo-1555041469-a586c61ea9bc?auto=format&fit=crop&w=900&q=80',
-  bed: 'https://images.unsplash.com/photo-1505693416388-ac5ce068fe85?auto=format&fit=crop&w=900&q=80',
-  table: 'https://images.unsplash.com/photo-1533090481720-856c6e3c1fdc?auto=format&fit=crop&w=900&q=80',
-  jersey: 'https://images.unsplash.com/photo-1579952363873-27f3bade9f55?auto=format&fit=crop&w=900&q=80',
-  shoes: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?auto=format&fit=crop&w=900&q=80',
-  dress: 'https://images.unsplash.com/photo-1496747611176-843222e1e57c?auto=format&fit=crop&w=900&q=80',
-  produce: 'https://images.unsplash.com/photo-1518977822534-7049a61ee0c2?auto=format&fit=crop&w=900&q=80',
-  maize: 'https://images.unsplash.com/photo-1534483509719-3feaee7c44d3?auto=format&fit=crop&w=900&q=80',
-  pram: 'https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&w=900&q=80',
-  generator: 'https://images.unsplash.com/photo-1581092795360-fd1ca04f0952?auto=format&fit=crop&w=900&q=80',
-  chairs: 'https://images.unsplash.com/photo-1503602642458-232111445657?auto=format&fit=crop&w=900&q=80',
-  bike: 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=900&q=80',
+const KIND_TO_POOL = {
+  iphone: 'iphone',
+  iphone12: 'iphone',
+  samsung: 'android',
+  tecno: 'android',
+  tecno2: 'android',
+  itel: 'android',
+  infinix: 'android',
+  tablet: 'tablet',
+  tv: 'tv',
+  laptop: 'laptop',
+  fridge: 'fridge',
+  speaker: 'speaker',
+  car: 'car',
+  hilux: 'pickup',
+  sofa: 'sofa',
+  bed: 'bed',
+  table: 'table',
+  jersey: 'jersey',
+  shoes: 'shoes',
+  dress: 'dress',
+  produce: 'produce',
+  maize: 'maize',
+  pram: 'pram',
+  generator: 'generator',
+  chairs: 'chair',
+  bike: 'bike',
 };
+
+function assignUniquePhotos(rows) {
+  const cursor = {};
+  const used = new Set();
+  const leftovers = [];
+  Object.values(PHOTO_POOLS).forEach((urls) => leftovers.push(...urls));
+
+  function take(poolName) {
+    const bucket = PHOTO_POOLS[poolName] || [];
+    let i = cursor[poolName] || 0;
+    while (i < bucket.length) {
+      const url = bucket[i];
+      i += 1;
+      cursor[poolName] = i;
+      if (!used.has(url)) {
+        used.add(url);
+        return url;
+      }
+    }
+    for (const url of leftovers) {
+      if (!used.has(url)) {
+        used.add(url);
+        return url;
+      }
+    }
+    const fallback = `https://picsum.photos/seed/zm${used.size + 1}/900/700`;
+    used.add(fallback);
+    return fallback;
+  }
+
+  return rows.map((row) => {
+    const copy = row.slice();
+    copy[3] = take(KIND_TO_POOL[row[3]] || 'android');
+    return copy;
+  });
+}
 
 const TOWNS = {
   Lusaka: { lat: -15.3875, lng: 28.3228 },
@@ -170,15 +207,17 @@ function buildExtraSamples() {
   return extra;
 }
 
-const CATALOG = BASE_CATALOG.concat(buildExtraSamples());
+const CATALOG = assignUniquePhotos(BASE_CATALOG.concat(buildExtraSamples()));
 
 function catId(cats, name) {
   const row = cats.find((c) => c.name === name);
   return row ? row.id : (cats[0] && cats[0].id) || null;
 }
 
-function photoFor(key) {
-  return PHOTOS[key] || PHOTOS.samsung;
+function photoFor(keyOrUrl) {
+  if (keyOrUrl && String(keyOrUrl).indexOf('http') === 0) return keyOrUrl;
+  const bucket = PHOTO_POOLS.android || [];
+  return bucket[0] || '';
 }
 
 const SAMPLE_OWNER_PHONE = '0750076052';
