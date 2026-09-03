@@ -19,10 +19,8 @@ const PHOTOS = {
   maize: 'https://images.unsplash.com/photo-1534483509719-3feaee7c44d3?auto=format&fit=crop&w=900&q=80',
   pram: 'https://images.unsplash.com/photo-1522771930-78848d9293e8?auto=format&fit=crop&w=900&q=80',
   generator: 'https://images.unsplash.com/photo-1581092795360-fd1ca04f0952?auto=format&fit=crop&w=900&q=80',
-  landNdola: 'https://images.unsplash.com/photo-1574943320219-553eb213f72d?auto=format&fit=crop&w=900&q=80',
-  landKitwe: 'https://images.unsplash.com/photo-1589923188900-85dae523342b?auto=format&fit=crop&w=900&q=80',
-  landLusaka: 'https://images.unsplash.com/photo-1625246333195-78d9c38ad449?auto=format&fit=crop&w=900&q=80',
-  landChongwe: 'https://images.unsplash.com/photo-1473580044384-7ba9967e16a0?auto=format&fit=crop&w=900&q=80',
+  chairs: 'https://images.unsplash.com/photo-1503602642458-232111445657?auto=format&fit=crop&w=900&q=80',
+  bike: 'https://images.unsplash.com/photo-1485965120184-e220f721d03e?auto=format&fit=crop&w=900&q=80',
 };
 
 const TOWNS = {
@@ -81,10 +79,10 @@ const CATALOG = [
   ['Tomatoes crate', 150, 'Produce', 'produce', 'Lusaka', 'New', 'Crate of tomatoes. Fresh.'],
   ['Cooking oil 20L', 680, 'Produce', 'produce', 'Ndola', 'New', '20 litre cooking oil.'],
   ['Charcoal bags', 80, 'Produce', 'maize', 'Kabwe', 'New', 'Bags of charcoal.'],
-  ['Plot in Kabulonga', 180000, 'Land', 'landLusaka', 'Lusaka', 'New', 'Ordinary plot in Kabulonga. Not built on.'],
-  ['Plot in Kitwe', 65000, 'Land', 'landKitwe', 'Kitwe', 'New', 'Residential plot in Kitwe. Still bush on the ground.'],
-  ['Smallholding Chongwe', 95000, 'Land', 'landChongwe', 'Lusaka', 'New', 'Small piece of land in Chongwe. Mostly bush.'],
-  ['Stand in Ndola', 40000, 'Land', 'landNdola', 'Ndola', 'New', 'Empty stand in Ndola. Just soil and grass. No house, no fence.'],
+  ['Plastic chairs x4', 220, 'Furniture', 'chairs', 'Ndola', 'New', 'Four plastic chairs. New.'],
+  ['Bicycle', 850, 'Electronics', 'bike', 'Kitwe', 'Pre-owned', 'Bicycle. Used, still riding.'],
+  ['Standing fan', 380, 'Electronics', 'speaker', 'Lusaka', 'Pre-owned', 'Standing fan. Used at home.'],
+  ['Clothes iron', 150, 'Electronics', 'generator', 'Chipata', 'New', 'Clothes iron. New.'],
   ['Baby pram', 400, 'Furniture', 'pram', 'Lusaka', 'Pre-owned', 'Baby pram. Used.'],
   ['Baby crib', 550, 'Furniture', 'bed', 'Kitwe', 'Pre-owned', 'Baby crib. Used.'],
   ['Gas stove', 1200, 'Electronics', 'fridge', 'Livingstone', 'Pre-owned', 'Gas stove. Used in the kitchen.'],
@@ -105,6 +103,18 @@ async function seedLayoutSampleListings() {
     `ALTER TABLE pool6.listings
        ADD COLUMN IF NOT EXISTS is_layout_sample BOOLEAN NOT NULL DEFAULT false`
   );
+
+  const landSampleFilter = `
+    is_layout_sample = true
+    AND (
+      title IN ('Plot in Kabulonga', 'Plot in Kitwe', 'Smallholding Chongwe', 'Stand in Ndola')
+      OR category_id IN (SELECT id FROM pool6.categories WHERE name = 'Land')
+    )`;
+  await pool.query(
+    `DELETE FROM pool6.land_details
+      WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${landSampleFilter})`
+  ).catch(() => {});
+  await pool.query(`DELETE FROM pool6.listings WHERE ${landSampleFilter}`);
 
   const old = await pool.query(
     `SELECT id, title FROM pool6.listings
