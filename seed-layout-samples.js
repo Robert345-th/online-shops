@@ -98,6 +98,53 @@ function photoFor(key) {
   return PHOTOS[key] || PHOTOS.phone;
 }
 
+const SAMPLE_OWNER_PHONE = '0750076052';
+
+async function findSampleOwner() {
+  const result = await pool.query(
+    `SELECT id, phone, shop_status, nrc_verified, account_type
+       FROM pool6.users
+      WHERE regexp_replace(COALESCE(phone, ''), '[^0-9]', '', 'g') LIKE '%750076052'
+      ORDER BY id
+      LIMIT 1`
+  );
+  return result.rows[0] || null;
+}
+
+async function ensureShopVerified(userId) {
+  await pool.query(
+    `UPDATE pool6.users SET
+       phone_verified = true,
+       account_type = 'shop',
+       shop_status = 'approved',
+       shop_rejection_reason = NULL,
+       nrc_verified = true,
+       nrc_status = 'approved',
+       shop_name = COALESCE(NULLIF(BTRIM(shop_name), ''), NULLIF(BTRIM(name), ''), 'My Shop'),
+       city = COALESCE(NULLIF(BTRIM(city), ''), 'Lusaka'),
+       province = COALESCE(NULLIF(BTRIM(province), ''), 'Lusaka Province'),
+       location_label = COALESCE(NULLIF(BTRIM(location_label), ''), 'Lusaka')
+     WHERE id = $1`,
+    [userId]
+  );
+  for (const category of ['General', 'Cars']) {
+    const active = await pool.query(
+      `SELECT 1 FROM pool6.subscriptions
+        WHERE user_id = $1 AND category = $2
+          AND payment_status = 'active' AND end_date > NOW()
+        LIMIT 1`,
+      [userId, category]
+    );
+    if (active.rows.length) continue;
+    await pool.query(
+      `INSERT INTO pool6.subscriptions
+         (user_id, category, plan_type, price, payment_status, transaction_ref, end_date)
+       VALUES ($1, $2, 'monthly', 0, 'active', 'SAMPLE_SHOP', NOW() + INTERVAL '1 year')`,
+      [userId, category]
+    );
+  }
+}
+
 async function seedLayoutSampleListings() {
   await pool.query(
     `ALTER TABLE pool6.listings
@@ -116,6 +163,22 @@ async function seedLayoutSampleListings() {
   ).catch(() => {});
   await pool.query(`DELETE FROM pool6.listings WHERE ${landSampleFilter}`);
 
+  const owner = await findSampleOwner();
+  if (!owner) {
+    console.log(`Skip sample listings: no account for ${SAMPLE_OWNER_PHONE}.`);
+    return;
+  }
+  await ensureShopVerified(owner.id);
+  console.log(`Sample listings shop ${SAMPLE_OWNER_PHONE} is approved (user ${owner.id}).`);
+
+  await pool.query(
+    `UPDATE pool6.listings
+        SET seller_id = $1, is_layout_sample = true
+      WHERE is_layout_sample = true
+         OR description = 'zm_layout_sample'`,
+    [owner.id]
+  );
+
   const old = await pool.query(
     `SELECT id, title FROM pool6.listings
       WHERE is_layout_sample = true
@@ -131,9 +194,10 @@ async function seedLayoutSampleListings() {
       `UPDATE pool6.listings
           SET description = $2,
               photos = $3,
+              seller_id = $4,
               is_layout_sample = true
         WHERE id = $1`,
-      [row.id, description, [photoFor(photoKey)]]
+      [row.id, description, [photoFor(photoKey)], owner.id]
     );
   }
 
@@ -142,28 +206,7 @@ async function seedLayoutSampleListings() {
     ['zm_layout_sample']
   );
   const haveTitles = new Set(haveRows.rows.map((r) => r.title));
-  if (haveTitles.size >= CATALOG.length) {
-    await pool.query(
-      `UPDATE pool6.listings SET is_layout_sample = true WHERE description = 'zm_layout_sample'`
-    );
-    return;
-  }
-
-  const sellers = await pool.query(
-    `SELECT seller_id
-       FROM pool6.listings
-      WHERE status = 'active'
-      GROUP BY seller_id
-      ORDER BY COUNT(*) DESC
-      LIMIT 8`
-  );
-  if (!sellers.rows.length) {
-    console.log('Skip sample listings: no active sellers to attach them to.');
-    return;
-  }
-
   const cats = (await pool.query('SELECT id, name FROM pool6.categories')).rows;
-  const sellerIds = sellers.rows.map((r) => r.seller_id);
   let added = 0;
 
   for (let i = 0; i < CATALOG.length; i++) {
@@ -176,7 +219,7 @@ async function seedLayoutSampleListings() {
          latitude, longitude, location_label, status, date_posted, is_layout_sample)
        VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW() - ($11 || ' minutes')::interval, true)`,
       [
-        sellerIds[i % sellerIds.length],
+        owner.id,
         title,
         description,
         price,
@@ -191,7 +234,7 @@ async function seedLayoutSampleListings() {
     );
     added += 1;
   }
-  if (added) console.log(`Added ${added} sample listing(s) to the feed.`);
+  if (added) console.log(`Added ${added} sample listing(s) on ${SAMPLE_OWNER_PHONE}.`);
 }
 
 module.exports = { seedLayoutSampleListings };
