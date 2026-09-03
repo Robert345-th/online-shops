@@ -212,8 +212,6 @@ function buildExtraSamples() {
     ['iPhone 11', 3200, 'Electronics', 'iphone12', 'Pre-owned', 'iPhone 11. Face ID working.'],
     ['iPhone 12', 4500, 'Electronics', 'iphone12', 'Pre-owned', 'iPhone 12. Used, battery okay.'],
     ['Samsung A04', 1800, 'Electronics', 'samsung', 'New', 'Samsung A04. Still new.'],
-    ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Pre-owned', '32 inch TV. Used at home.'],
-    ['Skyworth 43 inch TV', 4200, 'Electronics', 'tv', 'Pre-owned', '43 inch TV. Working well.'],
     ['Dell laptop', 3800, 'Electronics', 'laptop', 'Pre-owned', 'Dell laptop. For school.'],
     ['DSTV decoder', 450, 'Electronics', 'decoder', 'Pre-owned', 'DSTV decoder. Used.'],
     ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
@@ -420,6 +418,8 @@ async function seedLayoutSampleListings() {
       OR title LIKE 'Breakfast mealie meal%'
       OR title LIKE 'Roller mealie meal%'
       OR title LIKE 'Double bed%'
+      OR title LIKE 'Hisense 32 inch TV — %'
+      OR title LIKE 'Skyworth%'
       OR photos::text ~* 'Log_Furniture_Queen_Bed'
     )`;
   await pool.query(
