@@ -36,58 +36,135 @@ const TOWNS = {
   Mongu: { lat: -15.2484, lng: 23.1274 },
 };
 
-const CATALOG = [
-  ['iPhone 13', 6000, 'Electronics', 'phone', 'Lusaka', 'Pre-owned', 'Selling my iPhone 13. Battery is still fine.'],
-  ['Samsung A54', 4200, 'Electronics', 'samsung', 'Kitwe', 'Pre-owned', 'Samsung A54, used but clean. No cracks.'],
-  ['Tecno Spark 20', 1800, 'Electronics', 'phone', 'Ndola', 'New', 'Tecno Spark 20, still new in box.'],
-  ['Hisense 32 inch TV', 2500, 'Electronics', 'tv', 'Lusaka', 'New', '32 inch Hisense. Working well.'],
-  ['HP laptop', 5500, 'Electronics', 'laptop', 'Lusaka', 'Pre-owned', 'HP laptop for school or office. Used.'],
-  ['PlayStation 4', 3200, 'Electronics', 'speaker', 'Kitwe', 'Pre-owned', 'PS4 with one pad. Used.'],
-  ['Bluetooth speaker', 350, 'Electronics', 'speaker', 'Chipata', 'New', 'Small Bluetooth speaker. Loud enough.'],
-  ['Fridge', 4800, 'Electronics', 'fridge', 'Ndola', 'Pre-owned', 'Fridge, used at home. Still cooling.'],
-  ['Microwave', 900, 'Electronics', 'fridge', 'Kabwe', 'New', 'Microwave, barely used.'],
-  ['Generator 2kVA', 6500, 'Electronics', 'generator', 'Solwezi', 'New', '2kVA generator. Good for load shedding.'],
-  ['WiFi router', 280, 'Electronics', 'speaker', 'Lusaka', 'New', 'WiFi router. Simple home use.'],
-  ['Tablet', 1500, 'Electronics', 'phone', 'Livingstone', 'Pre-owned', 'Android tablet, used for kids.'],
-  ['Printer', 1100, 'Electronics', 'laptop', 'Kitwe', 'Pre-owned', 'Home printer. Black ink was replaced.'],
-  ['Car battery', 850, 'Electronics', 'generator', 'Chingola', 'New', 'Car battery, new.'],
-  ['Extension reel', 180, 'Electronics', 'generator', 'Mongu', 'New', 'Extension reel, 20 metres.'],
-  ['Toyota Corolla', 85000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Toyota Corolla. Used, running.'],
-  ['Nissan Tiida', 42000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Nissan Tiida. Town car.'],
-  ['Honda Fit', 38000, 'Cars', 'car', 'Ndola', 'Pre-owned', 'Honda Fit. Small, easy on fuel.'],
-  ['Toyota Hilux', 165000, 'Cars', 'hilux', 'Solwezi', 'Pre-owned', 'Hilux, used for work. Not new.'],
-  ['Toyota Vitz', 45000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Vitz. Used daily.'],
-  ['Mazda Demio', 36000, 'Cars', 'car', 'Kabwe', 'Pre-owned', 'Mazda Demio. Needs a small service.'],
-  ['Toyota Allion', 72000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Allion. Family car.'],
-  ['Hiace bus', 95000, 'Cars', 'hilux', 'Chipata', 'Pre-owned', 'Hiace. Used for passengers.'],
-  ['Sofa set', 2400, 'Furniture', 'sofa', 'Ndola', 'Pre-owned', 'Sofa set from the house. Used.'],
-  ['Dining table', 1800, 'Furniture', 'table', 'Lusaka', 'Pre-owned', 'Dining table with chairs. Used.'],
-  ['Bed and mattress', 2200, 'Furniture', 'bed', 'Kitwe', 'New', 'Bed and mattress. Still new.'],
-  ['Wardrobe', 1600, 'Furniture', 'bed', 'Livingstone', 'Pre-owned', 'Wooden wardrobe. Used.'],
-  ['Office chair', 450, 'Furniture', 'table', 'Lusaka', 'New', 'Office chair.'],
-  ['Coffee table', 600, 'Furniture', 'table', 'Kasama', 'Pre-owned', 'Small coffee table. Used.'],
-  ['Kitchen unit', 3500, 'Furniture', 'table', 'Ndola', 'New', 'Kitchen unit. Not fitted yet.'],
-  ['Football jersey', 150, 'Clothing', 'jersey', 'Chipata', 'New', 'Football jersey. New.'],
-  ['Men sneakers', 280, 'Clothing', 'shoes', 'Lusaka', 'New', 'Men sneakers. Size 42.'],
-  ['Ladies dress', 200, 'Clothing', 'dress', 'Kitwe', 'New', 'Ladies dress. New.'],
-  ['School shoes', 180, 'Clothing', 'shoes', 'Kabwe', 'New', 'School shoes. Size 5.'],
-  ['Winter jacket', 350, 'Clothing', 'dress', 'Kasama', 'Pre-owned', 'Winter jacket. Used one season.'],
-  ['Chitenge wraps', 120, 'Clothing', 'dress', 'Mongu', 'New', 'Chitenge wraps. New.'],
-  ['Work boots', 400, 'Clothing', 'shoes', 'Chingola', 'New', 'Work boots. New.'],
-  ['Baby clothes pack', 90, 'Clothing', 'dress', 'Lusaka', 'New', 'Pack of baby clothes.'],
-  ['50kg maize', 420, 'Produce', 'maize', 'Chipata', 'New', '50kg maize. This season.'],
-  ['Tomatoes crate', 150, 'Produce', 'produce', 'Lusaka', 'New', 'Crate of tomatoes. Fresh.'],
-  ['Cooking oil 20L', 680, 'Produce', 'produce', 'Ndola', 'New', '20 litre cooking oil.'],
-  ['Charcoal bags', 80, 'Produce', 'maize', 'Kabwe', 'New', 'Bags of charcoal.'],
-  ['Plastic chairs x4', 220, 'Furniture', 'chairs', 'Ndola', 'New', 'Four plastic chairs. New.'],
-  ['Bicycle', 850, 'Electronics', 'bike', 'Kitwe', 'Pre-owned', 'Bicycle. Used, still riding.'],
-  ['Standing fan', 380, 'Electronics', 'speaker', 'Lusaka', 'Pre-owned', 'Standing fan. Used at home.'],
-  ['Clothes iron', 150, 'Electronics', 'generator', 'Chipata', 'New', 'Clothes iron. New.'],
-  ['Baby pram', 400, 'Furniture', 'pram', 'Lusaka', 'Pre-owned', 'Baby pram. Used.'],
-  ['Baby crib', 550, 'Furniture', 'bed', 'Kitwe', 'Pre-owned', 'Baby crib. Used.'],
-  ['Gas stove', 1200, 'Electronics', 'fridge', 'Livingstone', 'Pre-owned', 'Gas stove. Used in the kitchen.'],
-  ['Water pump', 2100, 'Electronics', 'generator', 'Mongu', 'New', 'Water pump. New.'],
+// Small town bump so the same item is not K-for-K identical everywhere.
+const TOWN_PRICE = {
+  Lusaka: 1.04,
+  Kitwe: 1.02,
+  Ndola: 1.0,
+  Livingstone: 1.03,
+  Chipata: 0.98,
+  Kabwe: 0.97,
+  Chingola: 1.01,
+  Solwezi: 1.05,
+  Kasama: 0.96,
+  Mongu: 0.95,
+};
+
+function priceInTown(base, town) {
+  const factor = TOWN_PRICE[town] || 1;
+  const step = base >= 10000 ? 1000 : 10;
+  return Math.max(step, Math.round((base * factor) / step) * step);
+}
+
+// Street / classifieds prices (Zambia 2026): used phones below shop retail,
+// older used cars from local ads, mealie meal near ZamStats/JCTR.
+const BASE_CATALOG = [
+  ['iPhone 13', 6500, 'Electronics', 'phone', 'Lusaka', 'Pre-owned', 'Selling my iPhone 13. Battery is still fine.'],
+  ['Samsung A54', 3800, 'Electronics', 'samsung', 'Kitwe', 'Pre-owned', 'Samsung A54, used but clean. No cracks.'],
+  ['Tecno Spark 20', 2200, 'Electronics', 'phone', 'Ndola', 'New', 'Tecno Spark 20, still new in box.'],
+  ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Lusaka', 'New', '32 inch Hisense. Working well.'],
+  ['HP laptop', 4500, 'Electronics', 'laptop', 'Lusaka', 'Pre-owned', 'HP laptop for school or office. Used.'],
+  ['PlayStation 4', 2800, 'Electronics', 'speaker', 'Kitwe', 'Pre-owned', 'PS4 with one pad. Used.'],
+  ['Bluetooth speaker', 280, 'Electronics', 'speaker', 'Chipata', 'New', 'Small Bluetooth speaker. Loud enough.'],
+  ['Fridge', 3500, 'Electronics', 'fridge', 'Ndola', 'Pre-owned', 'Fridge, used at home. Still cooling.'],
+  ['Microwave', 750, 'Electronics', 'fridge', 'Kabwe', 'New', 'Microwave, barely used.'],
+  ['Generator 2kVA', 5500, 'Electronics', 'generator', 'Solwezi', 'New', '2kVA generator. Good for load shedding.'],
+  ['WiFi router', 250, 'Electronics', 'speaker', 'Lusaka', 'New', 'WiFi router. Simple home use.'],
+  ['Tablet', 1200, 'Electronics', 'phone', 'Livingstone', 'Pre-owned', 'Android tablet, used for kids.'],
+  ['Printer', 900, 'Electronics', 'laptop', 'Kitwe', 'Pre-owned', 'Home printer. Black ink was replaced.'],
+  ['Car battery', 750, 'Electronics', 'generator', 'Chingola', 'New', 'Car battery, new.'],
+  ['Extension reel', 150, 'Electronics', 'generator', 'Mongu', 'New', 'Extension reel, 20 metres.'],
+  ['Toyota Corolla', 110000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Toyota Corolla. Used, running.'],
+  ['Nissan Tiida', 58000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Nissan Tiida. Town car.'],
+  ['Honda Fit', 55000, 'Cars', 'car', 'Ndola', 'Pre-owned', 'Honda Fit. Small, easy on fuel.'],
+  ['Toyota Hilux', 280000, 'Cars', 'hilux', 'Solwezi', 'Pre-owned', 'Hilux, used for work. Not new.'],
+  ['Toyota Vitz', 62000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Vitz. Used daily.'],
+  ['Mazda Demio', 52000, 'Cars', 'car', 'Kabwe', 'Pre-owned', 'Mazda Demio. Needs a small service.'],
+  ['Toyota Allion', 105000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Allion. Family car.'],
+  ['Hiace bus', 130000, 'Cars', 'hilux', 'Chipata', 'Pre-owned', 'Hiace. Used for passengers.'],
+  ['Sofa set', 2800, 'Furniture', 'sofa', 'Ndola', 'Pre-owned', 'Sofa set from the house. Used.'],
+  ['Dining table', 2000, 'Furniture', 'table', 'Lusaka', 'Pre-owned', 'Dining table with chairs. Used.'],
+  ['Bed and mattress', 1800, 'Furniture', 'bed', 'Kitwe', 'New', 'Bed and mattress. Still new.'],
+  ['Wardrobe', 1400, 'Furniture', 'bed', 'Livingstone', 'Pre-owned', 'Wooden wardrobe. Used.'],
+  ['Office chair', 400, 'Furniture', 'table', 'Lusaka', 'New', 'Office chair.'],
+  ['Coffee table', 500, 'Furniture', 'table', 'Kasama', 'Pre-owned', 'Small coffee table. Used.'],
+  ['Kitchen unit', 3200, 'Furniture', 'table', 'Ndola', 'New', 'Kitchen unit. Not fitted yet.'],
+  ['Football jersey', 120, 'Clothing', 'jersey', 'Chipata', 'New', 'Football jersey. New.'],
+  ['Men sneakers', 250, 'Clothing', 'shoes', 'Lusaka', 'New', 'Men sneakers. Size 42.'],
+  ['Ladies dress', 180, 'Clothing', 'dress', 'Kitwe', 'New', 'Ladies dress. New.'],
+  ['School shoes', 120, 'Clothing', 'shoes', 'Kabwe', 'New', 'School shoes. Size 5.'],
+  ['Winter jacket', 280, 'Clothing', 'dress', 'Kasama', 'Pre-owned', 'Winter jacket. Used one season.'],
+  ['Chitenge wraps', 90, 'Clothing', 'dress', 'Mongu', 'New', 'Chitenge wraps. New.'],
+  ['Work boots', 350, 'Clothing', 'shoes', 'Chingola', 'New', 'Work boots. New.'],
+  ['Baby clothes pack', 80, 'Clothing', 'dress', 'Lusaka', 'New', 'Pack of baby clothes.'],
+  ['50kg maize', 280, 'Produce', 'maize', 'Chipata', 'New', '50kg maize grain. This season.'],
+  ['Tomatoes crate', 120, 'Produce', 'produce', 'Lusaka', 'New', 'Crate of tomatoes. Fresh.'],
+  ['Cooking oil 20L', 650, 'Produce', 'produce', 'Ndola', 'New', '20 litre cooking oil.'],
+  ['Charcoal bags', 90, 'Produce', 'maize', 'Kabwe', 'New', 'Small bags of charcoal.'],
+  ['Plastic chairs x4', 200, 'Furniture', 'chairs', 'Ndola', 'New', 'Four plastic chairs. New.'],
+  ['Bicycle', 650, 'Electronics', 'bike', 'Kitwe', 'Pre-owned', 'Bicycle. Used, still riding.'],
+  ['Standing fan', 280, 'Electronics', 'speaker', 'Lusaka', 'Pre-owned', 'Standing fan. Used at home.'],
+  ['Clothes iron', 120, 'Electronics', 'generator', 'Chipata', 'New', 'Clothes iron. New.'],
+  ['Baby pram', 350, 'Furniture', 'pram', 'Lusaka', 'Pre-owned', 'Baby pram. Used.'],
+  ['Baby crib', 450, 'Furniture', 'bed', 'Kitwe', 'Pre-owned', 'Baby crib. Used.'],
+  ['Gas stove', 900, 'Electronics', 'fridge', 'Livingstone', 'Pre-owned', 'Gas stove. Used in the kitchen.'],
+  ['Water pump', 1800, 'Electronics', 'generator', 'Mongu', 'New', 'Water pump. New.'],
 ];
+
+// 30 items × 10 towns = 300 extra ads. Unique titles. No land.
+function buildExtraSamples() {
+  const townNames = Object.keys(TOWNS);
+  const templates = [
+    ['Itel A18', 550, 'Electronics', 'phone', 'Pre-owned', 'Itel A18. Used, still working.'],
+    ['Tecno Pop 8', 950, 'Electronics', 'phone', 'Pre-owned', 'Tecno Pop 8. Used daily.'],
+    ['Tecno Spark 10', 1600, 'Electronics', 'phone', 'Pre-owned', 'Tecno Spark 10. No cracks.'],
+    ['Infinix Hot 12', 1400, 'Electronics', 'phone', 'Pre-owned', 'Infinix Hot 12. Strong battery.'],
+    ['Samsung A14', 2500, 'Electronics', 'samsung', 'Pre-owned', 'Samsung A14. Used, clean.'],
+    ['iPhone 11', 3200, 'Electronics', 'phone', 'Pre-owned', 'iPhone 11. Face ID working.'],
+    ['iPhone 12', 4500, 'Electronics', 'phone', 'Pre-owned', 'iPhone 12. Used, battery okay.'],
+    ['Samsung A04', 1800, 'Electronics', 'samsung', 'New', 'Samsung A04. Still new.'],
+    ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Pre-owned', '32 inch TV. Used at home.'],
+    ['Skyworth 43 inch TV', 4200, 'Electronics', 'tv', 'Pre-owned', '43 inch TV. Working well.'],
+    ['Dell laptop', 3800, 'Electronics', 'laptop', 'Pre-owned', 'Dell laptop. For school.'],
+    ['DSTV decoder', 450, 'Electronics', 'speaker', 'Pre-owned', 'DSTV decoder. Used.'],
+    ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
+    ['Kettle', 180, 'Electronics', 'fridge', 'New', 'Electric kettle. New.'],
+    ['Toyota Vitz 2010', 62000, 'Cars', 'car', 'Pre-owned', 'Vitz 2010. Town car, used.'],
+    ['Mazda Demio 2012', 52000, 'Cars', 'car', 'Pre-owned', 'Demio. Small, easy on fuel.'],
+    ['Honda Fit 2011', 55000, 'Cars', 'car', 'Pre-owned', 'Honda Fit. Used daily.'],
+    ['Toyota Corolla 2008', 95000, 'Cars', 'car', 'Pre-owned', 'Corolla 2008. Running.'],
+    ['Toyota Premio', 98000, 'Cars', 'car', 'Pre-owned', 'Premio. Family car.'],
+    ['Toyota Noah', 115000, 'Cars', 'car', 'Pre-owned', 'Noah. Used for family.'],
+    ['Sofa 3 piece', 2500, 'Furniture', 'sofa', 'Pre-owned', '3 piece sofa. Used.'],
+    ['Double bed', 1600, 'Furniture', 'bed', 'Pre-owned', 'Double bed. Used.'],
+    ['Wardrobe 2 door', 1200, 'Furniture', 'bed', 'Pre-owned', '2 door wardrobe. Used.'],
+    ['Dining 4 chairs', 1800, 'Furniture', 'table', 'Pre-owned', 'Dining table with 4 chairs.'],
+    ['Football jersey', 120, 'Clothing', 'jersey', 'New', 'Football jersey. New.'],
+    ['Ladies chitenge dress', 150, 'Clothing', 'dress', 'New', 'Chitenge dress. New.'],
+    ['Canvas sneakers', 200, 'Clothing', 'shoes', 'New', 'Canvas sneakers. Size 41.'],
+    ['School shoes size 4', 100, 'Clothing', 'shoes', 'New', 'School shoes. Size 4.'],
+    ['Breakfast mealie meal 25kg', 250, 'Produce', 'maize', 'New', '25kg breakfast mealie meal.'],
+    ['Roller mealie meal 25kg', 200, 'Produce', 'maize', 'New', '25kg roller mealie meal.'],
+  ];
+  const extra = [];
+  for (const tmpl of templates) {
+    for (const town of townNames) {
+      const [name, basePrice, category, photo, condition, desc] = tmpl;
+      extra.push([
+        `${name} — ${town}`,
+        priceInTown(basePrice, town),
+        category,
+        photo,
+        town,
+        condition,
+        `${desc} Selling in ${town}.`,
+      ]);
+    }
+  }
+  return extra;
+}
+
+const CATALOG = BASE_CATALOG.concat(buildExtraSamples());
 
 function catId(cats, name) {
   const row = cats.find((c) => c.name === name);
@@ -99,6 +176,7 @@ function photoFor(key) {
 }
 
 const SAMPLE_OWNER_PHONE = '0750076052';
+const INSERT_CHUNK = 40;
 
 async function findSampleOwner() {
   const result = await pool.query(
@@ -149,6 +227,39 @@ async function ensureShopVerified(userId) {
   }
 }
 
+async function insertChunk(ownerId, cats, rows, startIndex) {
+  const values = [];
+  const params = [];
+  rows.forEach((item, j) => {
+    const [title, price, category, photoKey, town, condition, description] = item;
+    const place = TOWNS[town] || TOWNS.Lusaka;
+    const o = j * 12;
+    values.push(
+      `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8}, $${o + 9}, $${o + 10}, 'active', NOW() - ($${o + 11} || ' minutes')::interval, true)`
+    );
+    params.push(
+      ownerId,
+      title,
+      description,
+      price,
+      catId(cats, category),
+      [photoFor(photoKey)],
+      condition,
+      place.lat,
+      place.lng,
+      town,
+      String(startIndex + j)
+    );
+  });
+  await pool.query(
+    `INSERT INTO pool6.listings
+      (seller_id, title, description, price, category_id, photos, condition,
+       latitude, longitude, location_label, status, date_posted, is_layout_sample)
+     VALUES ${values.join(', ')}`,
+    params
+  );
+}
+
 async function seedLayoutSampleListings() {
   await pool.query(
     `ALTER TABLE pool6.listings
@@ -183,48 +294,35 @@ async function seedLayoutSampleListings() {
     [owner.id]
   );
 
+  const cats = (await pool.query('SELECT id, name FROM pool6.categories')).rows;
   const old = await pool.query(
     `SELECT id, title FROM pool6.listings
       WHERE is_layout_sample = true
          OR description = 'zm_layout_sample'`
   );
   const byTitle = new Map(CATALOG.map((row) => [row[0], row]));
+  let updated = 0;
 
   for (const row of old.rows) {
     const item = byTitle.get(row.title);
     if (!item) continue;
-    const [, , , photoKey, , , description] = item;
+    const [, price, category, photoKey, town, condition, description] = item;
+    const place = TOWNS[town] || TOWNS.Lusaka;
     await pool.query(
       `UPDATE pool6.listings
           SET description = $2,
-              photos = $3,
-              seller_id = $4,
+              price = $3,
+              category_id = $4,
+              photos = $5,
+              condition = $6,
+              latitude = $7,
+              longitude = $8,
+              location_label = $9,
+              seller_id = $10,
               is_layout_sample = true
         WHERE id = $1`,
-      [row.id, description, [photoFor(photoKey)], owner.id]
-    );
-  }
-
-  const haveRows = await pool.query(
-    'SELECT title FROM pool6.listings WHERE is_layout_sample = true OR description = $1',
-    ['zm_layout_sample']
-  );
-  const haveTitles = new Set(haveRows.rows.map((r) => r.title));
-  const cats = (await pool.query('SELECT id, name FROM pool6.categories')).rows;
-  let added = 0;
-
-  for (let i = 0; i < CATALOG.length; i++) {
-    const [title, price, category, photoKey, town, condition, description] = CATALOG[i];
-    if (haveTitles.has(title)) continue;
-    const place = TOWNS[town] || TOWNS.Lusaka;
-    await pool.query(
-      `INSERT INTO pool6.listings
-        (seller_id, title, description, price, category_id, photos, condition,
-         latitude, longitude, location_label, status, date_posted, is_layout_sample)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW() - ($11 || ' minutes')::interval, true)`,
       [
-        owner.id,
-        title,
+        row.id,
         description,
         price,
         catId(cats, category),
@@ -233,10 +331,25 @@ async function seedLayoutSampleListings() {
         place.lat,
         place.lng,
         town,
-        String(i),
+        owner.id,
       ]
     );
-    added += 1;
+    updated += 1;
+  }
+  if (updated) console.log(`Updated ${updated} existing sample listing(s).`);
+
+  const haveRows = await pool.query(
+    'SELECT title FROM pool6.listings WHERE is_layout_sample = true OR description = $1',
+    ['zm_layout_sample']
+  );
+  const haveTitles = new Set(haveRows.rows.map((r) => r.title));
+  const toInsert = CATALOG.filter((item) => !haveTitles.has(item[0]));
+  let added = 0;
+
+  for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
+    const chunk = toInsert.slice(i, i + INSERT_CHUNK);
+    await insertChunk(owner.id, cats, chunk, i);
+    added += chunk.length;
   }
   if (added) console.log(`Added ${added} sample listing(s) on ${SAMPLE_OWNER_PHONE}.`);
 }
