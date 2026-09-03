@@ -4,11 +4,11 @@ const PHOTO_POOLS = require('./sample-photo-pools.json');
 const KIND_TO_POOL = {
   iphone: 'iphone',
   iphone12: 'iphone',
-  samsung: 'android',
-  tecno: 'android',
-  tecno2: 'android',
-  itel: 'android',
-  infinix: 'android',
+  samsung: 'samsung',
+  tecno: 'tecno',
+  tecno2: 'tecno',
+  itel: 'itel',
+  infinix: 'infinix',
   tablet: 'tablet',
   tv: 'tv',
   laptop: 'laptop',
@@ -119,7 +119,7 @@ const BASE_CATALOG = [
   ['Extension reel', 150, 'Electronics', 'generator', 'Mongu', 'New', 'Extension reel, 20 metres.'],
   ['Toyota Corolla', 110000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Toyota Corolla. Used, running.'],
   ['Nissan Tiida', 58000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Nissan Tiida. Town car.'],
-  ['Honda Fit', 55000, 'Cars', 'car', 'Ndola', 'Pre-owned', 'Honda Fit. Small, easy on fuel.'],
+  ['Honda Fit', 110000, 'Cars', 'car', 'Ndola', 'Pre-owned', 'Honda Fit. Small, easy on fuel.'],
   ['Toyota Hilux', 280000, 'Cars', 'hilux', 'Solwezi', 'Pre-owned', 'Hilux, used for work. Not new.'],
   ['Toyota Vitz', 62000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Vitz. Used daily.'],
   ['Mazda Demio', 52000, 'Cars', 'car', 'Kabwe', 'Pre-owned', 'Mazda Demio. Needs a small service.'],
@@ -174,7 +174,7 @@ function buildExtraSamples() {
     ['Kettle', 180, 'Electronics', 'fridge', 'New', 'Electric kettle. New.'],
     ['Toyota Vitz 2010', 62000, 'Cars', 'car', 'Pre-owned', 'Vitz 2010. Town car, used.'],
     ['Mazda Demio 2012', 52000, 'Cars', 'car', 'Pre-owned', 'Demio. Small, easy on fuel.'],
-    ['Honda Fit 2011', 55000, 'Cars', 'car', 'Pre-owned', 'Honda Fit. Used daily.'],
+    ['Honda Fit 2011', 108000, 'Cars', 'car', 'Pre-owned', 'Honda Fit. Used daily.'],
     ['Toyota Corolla 2008', 95000, 'Cars', 'car', 'Pre-owned', 'Corolla 2008. Running.'],
     ['Toyota Premio', 98000, 'Cars', 'car', 'Pre-owned', 'Premio. Family car.'],
     ['Toyota Noah', 115000, 'Cars', 'car', 'Pre-owned', 'Noah. Used for family.'],
@@ -193,9 +193,13 @@ function buildExtraSamples() {
   for (const tmpl of templates) {
     for (const town of townNames) {
       const [name, basePrice, category, photo, condition, desc] = tmpl;
+      let price = priceInTown(basePrice, town);
+      if (name.indexOf('Honda Fit') === 0) {
+        price = Math.min(115000, Math.max(100000, price));
+      }
       extra.push([
         `${name} — ${town}`,
-        priceInTown(basePrice, town),
+        price,
         category,
         photo,
         town,
