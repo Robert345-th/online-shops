@@ -66,16 +66,7 @@ const KIND_TO_POOL = {
 function assignUniquePhotos(rows) {
   const cursor = {};
   const used = new Set();
-  const leftovers = [];
-  const leftoverOrder = [
-    'tecno', 'itel', 'infinix', 'samsung', 'android', 'iphone',
-    'car', 'pickup', 'tv', 'laptop', 'fridge', 'generator', 'speaker',
-    'sofa', 'bed', 'table', 'chair', 'maize', 'produce', 'bike', 'tablet',
-  ];
-  leftoverOrder.forEach((name) => {
-    (PHOTO_POOLS[name] || []).filter(photoAllowed).forEach((url) => leftovers.push(url));
-  });
-  let reuseAt = 0;
+  const reuseAt = {};
 
   function take(poolName) {
     const bucket = (PHOTO_POOLS[poolName] || []).filter(photoAllowed);
@@ -89,17 +80,14 @@ function assignUniquePhotos(rows) {
         return url;
       }
     }
-    for (const url of leftovers) {
-      if (photoAllowed(url) && !used.has(url)) {
-        used.add(url);
-        return url;
-      }
+    // Reuse the same kind of photo. Never give a car picture to mealie meal.
+    if (bucket.length) {
+      const r = reuseAt[poolName] || 0;
+      reuseAt[poolName] = r + 1;
+      return bucket[r % bucket.length];
     }
-    const cycle = leftovers.length ? leftovers : bucket;
-    if (!cycle.length) return '';
-    const url = cycle[reuseAt % cycle.length];
-    reuseAt += 1;
-    return photoAllowed(url) ? url : '';
+    const fallback = (PHOTO_POOLS.android || []).filter(photoAllowed);
+    return fallback[0] || '';
   }
 
   return rows.map((row) => {
@@ -160,14 +148,7 @@ const BASE_CATALOG = [
   ['Printer', 900, 'Electronics', 'laptop', 'Kitwe', 'Pre-owned', 'Home printer. Black ink was replaced.'],
   ['Car battery', 750, 'Electronics', 'generator', 'Chingola', 'New', 'Car battery, new.'],
   ['Extension reel', 150, 'Electronics', 'generator', 'Mongu', 'New', 'Extension reel, 20 metres.'],
-  ['Toyota Corolla', 110000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Toyota Corolla. Used, running.'],
-  ['Nissan Tiida', 58000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Nissan Tiida. Town car.'],
   ['Honda Fit', 110000, 'Cars', 'fit', 'Ndola', 'Pre-owned', 'Honda Fit. Small, easy on fuel.'],
-  ['Toyota Hilux', 280000, 'Cars', 'hilux', 'Solwezi', 'Pre-owned', 'Hilux, used for work. Not new.'],
-  ['Toyota Vitz', 62000, 'Cars', 'car', 'Lusaka', 'Pre-owned', 'Vitz. Used daily.'],
-  ['Mazda Demio', 52000, 'Cars', 'car', 'Kabwe', 'Pre-owned', 'Mazda Demio. Needs a small service.'],
-  ['Toyota Allion', 105000, 'Cars', 'car', 'Kitwe', 'Pre-owned', 'Allion. Family car.'],
-  ['Hiace bus', 130000, 'Cars', 'hilux', 'Chipata', 'Pre-owned', 'Hiace. Used for passengers.'],
   ['Sofa set', 2800, 'Furniture', 'sofa', 'Ndola', 'Pre-owned', 'Sofa set from the house. Used.'],
   ['Dining table', 2000, 'Furniture', 'table', 'Lusaka', 'Pre-owned', 'Dining table with chairs. Used.'],
   ['Bed and mattress', 1800, 'Furniture', 'bed', 'Kitwe', 'New', 'Bed and mattress. Still new.'],
@@ -197,7 +178,7 @@ const BASE_CATALOG = [
   ['Water pump', 1800, 'Electronics', 'generator', 'Mongu', 'New', 'Water pump. New.'],
 ];
 
-// 30 items × 10 towns = 300 extra ads. Unique titles. No land.
+// Extra ads across 10 towns. Unique titles. One Honda Fit only. No land.
 function buildExtraSamples() {
   const townNames = Object.keys(TOWNS);
   const templates = [
@@ -215,11 +196,6 @@ function buildExtraSamples() {
     ['DSTV decoder', 450, 'Electronics', 'speaker', 'Pre-owned', 'DSTV decoder. Used.'],
     ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
     ['Kettle', 180, 'Electronics', 'fridge', 'New', 'Electric kettle. New.'],
-    ['Toyota Vitz 2010', 62000, 'Cars', 'car', 'Pre-owned', 'Vitz 2010. Town car, used.'],
-    ['Mazda Demio 2012', 52000, 'Cars', 'car', 'Pre-owned', 'Demio. Small, easy on fuel.'],
-    ['Toyota Corolla 2008', 95000, 'Cars', 'car', 'Pre-owned', 'Corolla 2008. Running.'],
-    ['Toyota Premio', 98000, 'Cars', 'car', 'Pre-owned', 'Premio. Family car.'],
-    ['Toyota Noah', 115000, 'Cars', 'car', 'Pre-owned', 'Noah. Used for family.'],
     ['Sofa 3 piece', 2500, 'Furniture', 'sofa', 'Pre-owned', '3 piece sofa. Used.'],
     ['Double bed', 1600, 'Furniture', 'bed', 'Pre-owned', 'Double bed. Used.'],
     ['Wardrobe 2 door', 1200, 'Furniture', 'bed', 'Pre-owned', '2 door wardrobe. Used.'],
@@ -236,7 +212,6 @@ function buildExtraSamples() {
     for (const town of townNames) {
       const [name, basePrice, category, photo, condition, desc] = tmpl;
       let price = priceInTown(basePrice, town);
-      if (name === 'Toyota Vitz 2010' && town === 'Livingstone') continue;
       extra.push([
         `${name} — ${town}`,
         price,
@@ -397,13 +372,32 @@ async function seedLayoutSampleListings() {
   ).catch(() => {});
   await pool.query(`DELETE FROM pool6.listings WHERE ${landSampleFilter}`);
 
+  const extraCarFilter = `
+    is_layout_sample = true
+    AND (
+      title LIKE 'Honda Fit 2011%'
+      OR (
+        title <> 'Honda Fit'
+        AND (
+          category_id IN (SELECT id FROM pool6.categories WHERE name = 'Cars')
+          OR title LIKE 'Toyota %'
+          OR title LIKE 'Mazda Demio%'
+          OR title LIKE 'Nissan Tiida%'
+          OR title LIKE 'Hiace%'
+        )
+      )
+    )`;
+  await pool.query(
+    `DELETE FROM pool6.car_details
+      WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${extraCarFilter})`
+  ).catch(() => {});
+  await pool.query(`DELETE FROM pool6.listings WHERE ${extraCarFilter}`);
+
   await pool.query(
     `DELETE FROM pool6.listings
       WHERE is_layout_sample = true
         AND (
-          title = 'Toyota Vitz 2010 — Livingstone'
-          OR title LIKE 'Honda Fit 2011%'
-          OR photos::text ~* 'Bugatti|Veyron|Lotus|Lamborghini|Ferrari|Porsche|McLaren|Elise|Spyder|Corvette|Mustang|Camaro'
+          photos::text ~* 'Bugatti|Veyron|Lotus|Lamborghini|Ferrari|Porsche|McLaren|Elise|Spyder|Corvette|Mustang|Camaro'
           OR photos::text ~* 'unsplash|pexels|picsum|loremflickr'
         )`
   );
