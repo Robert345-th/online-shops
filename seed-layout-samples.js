@@ -114,13 +114,17 @@ async function findSampleOwner() {
 async function ensureShopVerified(userId) {
   await pool.query(
     `UPDATE pool6.users SET
+       name = 'Deborah Phiri',
        phone_verified = true,
        account_type = 'shop',
        shop_status = 'approved',
        shop_rejection_reason = NULL,
        nrc_verified = true,
        nrc_status = 'approved',
-       shop_name = COALESCE(NULLIF(BTRIM(shop_name), ''), NULLIF(BTRIM(name), ''), 'My Shop'),
+       shop_name = CASE
+         WHEN shop_name IS NULL OR BTRIM(shop_name) = '' OR shop_name ILIKE '%robert%' THEN 'Deborah Phiri'
+         ELSE shop_name
+       END,
        city = COALESCE(NULLIF(BTRIM(city), ''), 'Lusaka'),
        province = COALESCE(NULLIF(BTRIM(province), ''), 'Lusaka Province'),
        location_label = COALESCE(NULLIF(BTRIM(location_label), ''), 'Lusaka')
