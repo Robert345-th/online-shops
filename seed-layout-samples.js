@@ -294,6 +294,10 @@ async function seedLayoutSampleListings() {
     [owner.id]
   );
 
+  console.log(
+    `Seeding sample catalog: ${CATALOG.length} titles (${CATALOG.length - BASE_CATALOG.length} extra).`
+  );
+
   const cats = (await pool.query('SELECT id, name FROM pool6.categories')).rows;
   const old = await pool.query(
     `SELECT id, title FROM pool6.listings
@@ -348,10 +352,16 @@ async function seedLayoutSampleListings() {
 
   for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
     const chunk = toInsert.slice(i, i + INSERT_CHUNK);
-    await insertChunk(owner.id, cats, chunk, i);
-    added += chunk.length;
+    try {
+      await insertChunk(owner.id, cats, chunk, i);
+      added += chunk.length;
+    } catch (err) {
+      console.error(`Sample insert failed at ${i}:`, err.message);
+      throw err;
+    }
   }
   if (added) console.log(`Added ${added} sample listing(s) on ${SAMPLE_OWNER_PHONE}.`);
+  else console.log(`Sample catalog already present (${haveTitles.size} existing).`);
 }
 
 module.exports = { seedLayoutSampleListings };
