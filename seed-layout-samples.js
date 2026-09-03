@@ -227,37 +227,59 @@ async function ensureShopVerified(userId) {
   }
 }
 
-async function insertChunk(ownerId, cats, rows, startIndex) {
-  const values = [];
-  const params = [];
-  rows.forEach((item, j) => {
-    const [title, price, category, photoKey, town, condition, description] = item;
-    const place = TOWNS[town] || TOWNS.Lusaka;
-    const o = j * 12;
-    values.push(
-      `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8}, $${o + 9}, $${o + 10}, 'active', NOW() - ($${o + 11} || ' minutes')::interval, true)`
-    );
-    params.push(
-      ownerId,
-      title,
-      description,
-      price,
-      catId(cats, category),
-      [photoFor(photoKey)],
-      condition,
-      place.lat,
-      place.lng,
-      town,
-      String(startIndex + j)
-    );
-  });
+function listingInsertParams(ownerId, cats, item, minutesAgo) {
+  const [title, price, category, photoKey, town, condition, description] = item;
+  const place = TOWNS[town] || TOWNS.Lusaka;
+  return [
+    ownerId,
+    title,
+    description,
+    price,
+    catId(cats, category),
+    [photoFor(photoKey)],
+    condition,
+    place.lat,
+    place.lng,
+    town,
+    String(minutesAgo),
+  ];
+}
+
+async function insertOne(ownerId, cats, item, minutesAgo) {
   await pool.query(
     `INSERT INTO pool6.listings
       (seller_id, title, description, price, category_id, photos, condition,
        latitude, longitude, location_label, status, date_posted, is_layout_sample)
-     VALUES ${values.join(', ')}`,
-    params
+     VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, 'active', NOW() - ($11 || ' minutes')::interval, true)`,
+    listingInsertParams(ownerId, cats, item, minutesAgo)
   );
+}
+
+async function insertChunk(ownerId, cats, rows, startIndex) {
+  const paramsPerRow = 11;
+  const values = [];
+  const params = [];
+  rows.forEach((item, j) => {
+    const o = j * paramsPerRow;
+    values.push(
+      `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8}, $${o + 9}, $${o + 10}, 'active', NOW() - ($${o + 11} || ' minutes')::interval, true)`
+    );
+    params.push(...listingInsertParams(ownerId, cats, item, startIndex + j));
+  });
+  try {
+    await pool.query(
+      `INSERT INTO pool6.listings
+        (seller_id, title, description, price, category_id, photos, condition,
+         latitude, longitude, location_label, status, date_posted, is_layout_sample)
+       VALUES ${values.join(', ')}`,
+      params
+    );
+  } catch (err) {
+    console.error(`Sample batch insert failed, inserting one by one: ${err.message}`);
+    for (let j = 0; j < rows.length; j++) {
+      await insertOne(ownerId, cats, rows[j], startIndex + j);
+    }
+  }
 }
 
 async function seedLayoutSampleListings() {
@@ -352,13 +374,8 @@ async function seedLayoutSampleListings() {
 
   for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
     const chunk = toInsert.slice(i, i + INSERT_CHUNK);
-    try {
-      await insertChunk(owner.id, cats, chunk, i);
-      added += chunk.length;
-    } catch (err) {
-      console.error(`Sample insert failed at ${i}:`, err.message);
-      throw err;
-    }
+    await insertChunk(owner.id, cats, chunk, i);
+    added += chunk.length;
   }
   if (added) console.log(`Added ${added} sample listing(s) on ${SAMPLE_OWNER_PHONE}.`);
   else console.log(`Sample catalog already present (${haveTitles.size} existing).`);
