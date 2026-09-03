@@ -3,7 +3,7 @@ const router = express.Router();
 const pool = require('./db');
 const requireAuth = require('./middleware');
 const { sendPushNotification } = require('./notifications');
-const { presencePublicFields } = require('./user-presence');
+const { presencePublicFields, ensureLastSeenColumns } = require('./user-presence');
 const { ensureBlockedUsersTable, getBlockState } = require('./user-blocks');
 const { recordReplyTime, isChatMuted, loadChatPrefs, ensureMarketplaceTables } = require('./marketplace-extras');
 
@@ -24,6 +24,10 @@ async function ensureOfferColumns() {
 // GET - list of conversations (grouped by other person)
 router.get('/conversations', requireAuth, async (req, res) => {
   try {
+    await Promise.all([
+      ensureBlockedUsersTable().catch(() => {}),
+      ensureLastSeenColumns().catch(() => {}),
+    ]);
     const result = await pool.query(
       `WITH latest AS (
          SELECT DISTINCT ON (
