@@ -326,12 +326,7 @@ function photoFor(keyOrUrl) {
 }
 
 const SAMPLE_OWNER_PHONE = '0750076052';
-const MY_SHOP_SAMPLE_COUNT = 20;
 const INSERT_CHUNK = 40;
-
-function myShopSampleTitleSet() {
-  return new Set(BASE_CATALOG.slice(0, MY_SHOP_SAMPLE_COUNT).map((row) => row[0]));
-}
 
 async function findSampleOwner() {
   const result = await pool.query(
@@ -342,54 +337,6 @@ async function findSampleOwner() {
       LIMIT 1`
   );
   return result.rows[0] || null;
-}
-
-async function findAdminShopOwner(sampleOwnerId) {
-  const result = await pool.query(
-    `SELECT id, name, phone, shop_status, account_type
-       FROM pool6.users
-      WHERE is_admin = true
-        AND id <> $1
-      ORDER BY
-        CASE WHEN COALESCE(name, '') ILIKE '%robert%' THEN 0 ELSE 1 END,
-        id
-      LIMIT 1`,
-    [sampleOwnerId]
-  );
-  return result.rows[0] || null;
-}
-
-async function ensureAdminShopReady(userId) {
-  await pool.query(
-    `UPDATE pool6.users SET
-       phone_verified = true,
-       account_type = CASE
-         WHEN account_type IN ('shop', 'both') THEN account_type
-         ELSE 'shop'
-       END,
-       shop_status = 'approved',
-       shop_rejection_reason = NULL,
-       nrc_verified = true,
-       nrc_status = 'approved'
-     WHERE id = $1`,
-    [userId]
-  );
-  for (const category of ['General', 'Cars']) {
-    const active = await pool.query(
-      `SELECT 1 FROM pool6.subscriptions
-        WHERE user_id = $1 AND category = $2
-          AND payment_status = 'active' AND end_date > NOW()
-        LIMIT 1`,
-      [userId, category]
-    );
-    if (active.rows.length) continue;
-    await pool.query(
-      `INSERT INTO pool6.subscriptions
-         (user_id, category, plan_type, price, payment_status, transaction_ref, end_date)
-       VALUES ($1, $2, 'monthly', 0, 'active', 'ADMIN_SHOP', NOW() + INTERVAL '1 year')`,
-      [userId, category]
-    );
-  }
 }
 
 async function ensureShopVerified(userId) {
@@ -458,7 +405,7 @@ async function insertOne(ownerId, cats, item, minutesAgo) {
   );
 }
 
-async function insertChunk(sellerIdFor, cats, rows, startIndex) {
+async function insertChunk(ownerId, cats, rows, startIndex) {
   const paramsPerRow = 11;
   const values = [];
   const params = [];
@@ -467,7 +414,7 @@ async function insertChunk(sellerIdFor, cats, rows, startIndex) {
     values.push(
       `($${o + 1}, $${o + 2}, $${o + 3}, $${o + 4}, $${o + 5}, $${o + 6}, $${o + 7}, $${o + 8}, $${o + 9}, $${o + 10}, 'active', NOW() - ($${o + 11} || ' minutes')::interval, true)`
     );
-    params.push(...listingInsertParams(sellerIdFor(item[0]), cats, item, startIndex + j));
+    params.push(...listingInsertParams(ownerId, cats, item, startIndex + j));
   });
   try {
     await pool.query(
@@ -480,7 +427,7 @@ async function insertChunk(sellerIdFor, cats, rows, startIndex) {
   } catch (err) {
     console.error(`Sample batch insert failed, inserting one by one: ${err.message}`);
     for (let j = 0; j < rows.length; j++) {
-      await insertOne(sellerIdFor(rows[j][0]), cats, rows[j], startIndex + j);
+      await insertOne(ownerId, cats, rows[j], startIndex + j);
     }
   }
 }
@@ -625,25 +572,12 @@ async function seedLayoutSampleListings() {
   await ensureShopVerified(owner.id);
   console.log(`Sample listings shop ${SAMPLE_OWNER_PHONE} is approved (user ${owner.id}).`);
 
-  const adminOwner = await findAdminShopOwner(owner.id);
-  const myShopTitles = myShopSampleTitleSet();
-  if (adminOwner) {
-    await ensureAdminShopReady(adminOwner.id);
-    console.log(`My Shop samples go to admin ${adminOwner.name || adminOwner.id} (${myShopTitles.size} ads).`);
-  } else {
-    console.log('No admin shop found; all sample ads stay on the layout shop.');
-  }
-
-  function sellerIdFor(title) {
-    if (adminOwner && myShopTitles.has(title)) return adminOwner.id;
-    return owner.id;
-  }
-
   await pool.query(
     `UPDATE pool6.listings
-        SET is_layout_sample = true
+        SET seller_id = $1, is_layout_sample = true
       WHERE is_layout_sample = true
-         OR description = 'zm_layout_sample'`
+         OR description = 'zm_layout_sample'`,
+    [owner.id]
   );
 
   console.log(
@@ -687,7 +621,7 @@ async function seedLayoutSampleListings() {
         place.lat,
         place.lng,
         locationLabel(row.title, town),
-        sellerIdFor(row.title),
+        owner.id,
       ]
     );
     updated += 1;
@@ -704,10 +638,10 @@ async function seedLayoutSampleListings() {
 
   for (let i = 0; i < toInsert.length; i += INSERT_CHUNK) {
     const chunk = toInsert.slice(i, i + INSERT_CHUNK);
-    await insertChunk(sellerIdFor, cats, chunk, i);
+    await insertChunk(owner.id, cats, chunk, i);
     added += chunk.length;
   }
-  if (added) console.log(`Added ${added} sample listing(s).`);
+  if (added) console.log(`Added ${added} sample listing(s) on ${SAMPLE_OWNER_PHONE}.`);
   else console.log(`Sample catalog already present (${haveTitles.size} existing).`);
 
   await seedCarDetails();
