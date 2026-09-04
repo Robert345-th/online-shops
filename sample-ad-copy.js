@@ -270,6 +270,54 @@ const EXTRA_COPY = {
     `Canvas sneakers, new, size 41. Unisex look. I bought a pair too small.\n\nBox there. Try them here.\n\n${pickup(town, name)}`,
   'School shoes size 4': (town, name) =>
     `Black school shoes, new, size 4. For a younger child. I got size 5 as well in another ad if this is small.\n\n${pickup(town, name)}`,
+  'HP EliteBook': (town, name) =>
+    `HP EliteBook, 8GB RAM, 256GB SSD. Good for school and office. Windows activated, charger included.\n\nKeyboard and screen are fine. Battery about 3 hours. Used, clean, not a slow machine.\n\n${pickup(town, name)} You can try Word and YouTube before you pay.`,
+  'JBL speaker': (town, name) =>
+    `Bluetooth speaker, new. Loud enough for a small shop or braai. USB charge, aux in the pack.\n\n${pickup(town, name)}`,
+  'Home fridge': (town, name) =>
+    `Medium fridge, used at home. Still cooling, freezer makes ice. Come and see it working. You arrange a van.\n\n${pickup(town, name)}`,
+  'Home microwave': (town, name) =>
+    `Electric microwave, barely used. 20 litre, turntable inside. Glass plate is there.\n\n${pickup(town, name)}`,
+  'Home WiFi router': (town, name) =>
+    `Home WiFi router, new. Works with Zamtel, MTN or Airtel. Box and cable included.\n\n${pickup(town, name)}`,
+  'Android tablet': (town, name) =>
+    `Android tablet, 32GB. Used for kids' YouTube and school PDFs. No cracks. WiFi only. Charger included, reset already.\n\n${pickup(town, name)}`,
+  'Canon printer': (town, name) =>
+    `Canon home printer. Prints and scans. Black ink replaced last month. USB cable is there.\n\n${pickup(town, name)}`,
+  '12V car battery': (town, name) =>
+    `New 12V car battery. Still in the pack, not used in a car. You can test voltage here. Fits most small Japanese cars.\n\n${pickup(town, name)}`,
+  'Extension cable reel': (town, name) =>
+    `20 metre extension reel, new. Thick cable, 4 sockets. Good for a generator or outdoor work.\n\n${pickup(town, name)}`,
+  'Double bed set': (town, name) =>
+    `Double bed with mattress, still new. Wooden frame, slats included. Bring a van.\n\n${pickup(town, name)}`,
+  'Front loader washer': (town, name) =>
+    `Front loader washing machine, new, 8kg. Still in the pack. You need a plumber for the pipes. Heavy — bring a van.\n\n${pickup(town, name)}`,
+  'Mesh office chair': (town, name) =>
+    `Mesh office chair, new. Swivel, wheels, height adjusts. Good for a shop counter or home desk.\n\n${pickup(town, name)}`,
+  'Swivel desk chair': (town, name) =>
+    `Swivel desk chair, new. Wheels and height adjust. I bought an extra for the office.\n\n${pickup(town, name)}`,
+  'Wooden coffee table': (town, name) =>
+    `Small wooden coffee table, used. Lower shelf for remotes. Solid, a few cup rings on top.\n\n${pickup(town, name)}`,
+  'Kitchen cabinets': (town, name) =>
+    `Kitchen unit, new, not fitted yet. Sink cut-out is there, taps not included. You fit it or bring a carpenter.\n\n${pickup(town, name)}`,
+  'Puffer jacket': (town, name) =>
+    `Winter jacket, used one cold season. Size M. Zips work, no tears. Washed.\n\n${pickup(town, name)}`,
+  'Baby clothes set': (town, name) =>
+    `Pack of baby clothes, new. 0–6 months. Vests, sleepsuits and wrappers. Not used, still packed.\n\n${pickup(town, name)}`,
+  'Cooking oil jerry': (town, name) =>
+    `Cooking oil, sealed shop stock. You can check the seal here. Bring a car if you take more than one.\n\n${pickup(town, name)}`,
+  'Charcoal sack': (town, name) =>
+    `Charcoal, well burned, not too much dust. Good for a braai or the brazier. Price is per bag.\n\n${pickup(town, name)}`,
+  'White plastic chairs': (town, name) =>
+    `White plastic chairs, new, stackable. Good for a shop, church or extra visitors. I sell them as a set.\n\n${pickup(town, name)}`,
+  'Mountain bike': (town, name) =>
+    `Adult bicycle, used, still riding. Gears work, tyres are decent. You can take a short ride outside before you pay.\n\n${pickup(town, name)}`,
+  'Pedestal fan': (town, name) =>
+    `Standing fan, used at home. 3 speeds, oscillation works. Normal 3-pin plug.\n\n${pickup(town, name)}`,
+  'Steam iron': (town, name) =>
+    `Clothes iron, new. Good for uniforms and chitenge. Box included.\n\n${pickup(town, name)}`,
+  'PS4 console': (town, name) =>
+    `PS4 with one pad and HDMI cable. Reads discs. Pad has normal wear. You can plug it on a TV here and try.\n\n${pickup(town, name)}`,
   'Breakfast mealie meal 25kg': (town, name) =>
     `Breakfast mealie meal, 25kg, this month's stock. Fine grind, not roller. Bag is sealed.\n\nPrice is per bag. I can do a small discount if you take 3 or more.\n\n${pickup(town, name)}`,
   'Roller mealie meal 25kg': (town, name) =>
