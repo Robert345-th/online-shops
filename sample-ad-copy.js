@@ -227,7 +227,7 @@ const EXTRA_COPY = {
   'Skyworth 43 inch TV': (town, name) =>
     `Skyworth 43 inch, used. Good sitting-room size. Ports working. I am moving house and I want a smaller TV.\n\nRemote included. You need two people to lift it. I can switch it on so you see the picture.\n\n${pickup(town, name)}`,
   'Dell laptop': (town, name) =>
-    `Dell laptop, 8GB RAM, 256GB. For school: Zoom, Word, research. Charger included. Battery about 2–3 hours.\n\nA few keyboard shine marks. I installed a fresh Windows. You can try it on the table here.\n\n${pickup(town, name)}`,
+    `Dell laptop, 8GB RAM, 256GB. For school: Zoom, Word, research. Charger included. Battery about 2–3 hours.\n\nScreen and keyboard are fine. I installed a fresh Windows. You can try it on the table here.\n\n${pickup(town, name)}`,
   'DSTV decoder': (town, name) =>
     `DSTV decoder, used, with remote and power pack. I swapped to GOtv. You put your own smartcard / account.\n\nI will not sort your subscription. Machine itself is fine, I was watching last week.\n\n${pickup(town, name)}`,
   'Tiger 1kVA generator': (town, name) =>

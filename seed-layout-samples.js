@@ -26,6 +26,9 @@ function photoAllowed(url) {
     'efta00001773', 'tomato', 'canap', 'josepinism', 'claw_foot',
     'herter', 'antique_oak', 'antique_claw', '1963_frigidaire', 'hemingway',
     'altes_schlafzimmer', 'museum',
+    'vivobook', 'asus_vivobook', 'laptop_computer.jpeg',
+    'bottom-of-electric', 'heater-cable-defect', 'waterboiler-internal',
+    'teardown', 'motherboard',
   ];
   return !banned.some((tok) => name.includes(tok));
 }
@@ -50,7 +53,9 @@ const KIND_TO_POOL = {
   infinix: 'infinix',
   tablet: 'tablet',
   tv: 'tv',
-  laptop: 'laptop',
+  laptop: 'hp',
+  hp: 'hp',
+  dell: 'dell',
   fridge: 'fridge',
   washer: 'washer',
   airfryer: 'airfryer',
@@ -169,7 +174,7 @@ const BASE_CATALOG = [
   ['Samsung A54', 3800, 'Electronics', 'samsungA', 'Kitwe', 'Pre-owned', 'Samsung A54, used but clean. No cracks.'],
   ['Tecno Spark 20', 2200, 'Electronics', 'spark20', 'Chipata', 'New', 'Tecno Spark 20, still new in box.'],
   ['Hisense 32 inch TV', 2200, 'Electronics', 'tv', 'Lusaka', 'New', '32 inch Hisense. Working well.'],
-  ['HP laptop', 4500, 'Electronics', 'laptop', 'Lusaka', 'Pre-owned', 'HP laptop for school or office. Used.'],
+  ['HP laptop', 4500, 'Electronics', 'hp', 'Lusaka', 'Pre-owned', 'HP laptop for school or office. Used.'],
   ['PlayStation 4', 2800, 'Electronics', 'console', 'Kitwe', 'Pre-owned', 'PS4 with one pad. Used.'],
   ['Bluetooth speaker', 280, 'Electronics', 'speaker', 'Chipata', 'New', 'Small Bluetooth speaker. Loud enough.'],
   ['Fridge', 3500, 'Electronics', 'fridge', 'Ndola', 'Pre-owned', 'Fridge, used at home. Still cooling.'],
@@ -213,7 +218,7 @@ const BASE_CATALOG = [
 function buildExtraSamples() {
   const townNames = Object.keys(TOWNS);
   const templates = [
-    ['Dell laptop', 3800, 'Electronics', 'laptop', 'Pre-owned', 'Dell laptop. For school.'],
+    ['Dell laptop', 3800, 'Electronics', 'dell', 'Pre-owned', 'Dell laptop. For school.'],
     ['DSTV decoder', 450, 'Electronics', 'decoder', 'Pre-owned', 'DSTV decoder. Used.'],
     ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
     ['Kettle', 180, 'Electronics', 'kettle', 'New', 'Electric kettle. New.'],
@@ -438,6 +443,10 @@ async function seedLayoutSampleListings() {
       OR photos::text ~* 'Log_Furniture_Queen_Bed'
       OR photos::text ~* 'EFTA00001773'
       OR photos::text ~* 'Tomato'
+      OR photos::text ~* 'Asus_vivobook'
+      OR photos::text ~* 'Bottom-of-electric-kettle'
+      OR photos::text ~* 'Laptop_computer.jpeg'
+      OR photos::text ~* 'heater-cable-defect'
     )`;
   await pool.query(
     `DELETE FROM pool6.listing_watches
