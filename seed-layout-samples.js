@@ -29,6 +29,19 @@ function photoAllowed(url) {
     'vivobook', 'asus_vivobook', 'laptop_computer.jpeg',
     'bottom-of-electric', 'heater-cable-defect', 'waterboiler-internal',
     'teardown', 'motherboard',
+    'latitude_e6540', 'inspiron_1525',
+    'panasonic_home_refrigerator', 'jla7',
+    "n'oveen", 'philips_kettle.jpg', 'phillips_white', 'bollitore_elettrico',
+    'lrm_20200521', 'aeg_kettle',
+    'klippansofa', 'expandable_table', 'pasay_city',
+    'compact_modern_fitted_kitchen', 'coffee_table_on_a_white_background',
+    'covers_removed', 'epson-inkjet-printer', 'epson_stylus',
+    'pallet_of_scrap', 'abandoned_electric_water_pump',
+    'braunau-bezirksmuseum', 'carriagesled', 'stroller_%28psf', 'pushchair',
+    'dog_stroller', 'raleigh_lady', '1930s',
+    'amstrad_decoder', 'd-box-2', 'samsung_plasma',
+    'charles_and_ray_eames', 'the_gables', 'airfryer_convert',
+    'saskatoon_public_library', 'img_5693',
   ];
   return !banned.some((tok) => name.includes(tok));
 }
@@ -211,7 +224,6 @@ const BASE_CATALOG = [
   ['Baby pram', 350, 'Furniture', 'pram', 'Lusaka', 'Pre-owned', 'Baby pram. Used.'],
   ['Baby crib', 450, 'Furniture', 'crib', 'Kitwe', 'Pre-owned', 'Baby crib. Used.'],
   ['Gas stove', 900, 'Electronics', 'stove', 'Livingstone', 'Pre-owned', 'Gas stove. Used in the kitchen.'],
-  ['Water pump', 1800, 'Electronics', 'pump', 'Mongu', 'New', 'Water pump. New.'],
 ];
 
 // Extra ads across 10 towns. Unique titles. One Honda Fit only. No land.
@@ -447,6 +459,28 @@ async function seedLayoutSampleListings() {
       OR photos::text ~* 'Bottom-of-electric-kettle'
       OR photos::text ~* 'Laptop_computer.jpeg'
       OR photos::text ~* 'heater-cable-defect'
+      OR title = 'Water pump'
+      OR title LIKE 'Water pump — %'
+      OR photos::text ~* 'Latitude_E6540'
+      OR photos::text ~* 'Inspiron_1525'
+      OR photos::text ~* 'Panasonic_HOME_REFRIGERATOR'
+      OR photos::text ~* 'JLA7'
+      OR photos::text ~* 'Klippansofa'
+      OR photos::text ~* 'Expandable_table'
+      OR photos::text ~* 'Pasay_City'
+      OR photos::text ~* 'covers_removed'
+      OR photos::text ~* 'Pallet_of_scrap'
+      OR photos::text ~* 'Abandoned_electric_water_pump'
+      OR photos::text ~* 'Braunau-Bezirksmuseum'
+      OR photos::text ~* 'CarriageSled'
+      OR photos::text ~* 'Raleigh_lady'
+      OR photos::text ~* 'Amstrad_decoder'
+      OR photos::text ~* 'D-Box-2'
+      OR photos::text ~* 'Samsung_plasma'
+      OR photos::text ~* 'The_Gables'
+      OR photos::text ~* 'Airfryer_Convert'
+      OR photos::text ~* 'AEG_kettle'
+      OR photos::text ~* 'Epson-inkjet-printer'
     )`;
   await pool.query(
     `DELETE FROM pool6.listing_watches
