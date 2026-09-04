@@ -122,16 +122,16 @@ const BASE_COPY = {
     `Toyota Hiace, used for passengers on the Chipata road. 14 seater layout. Engine pulls, I have been using it for work.\n\nWhitebook available. Mileage about 245,000 km. Body has work marks, as expected. Good for a small bus business if you service it properly.\n\n${pickup(town, 'Hiace bus')} Inspect with a mechanic.`,
 
   'Sofa set': (town) =>
-    `3 piece sofa set from the house. 5 seater in total (3+1+1). Fabric is still decent, no broken legs. Cushions are used but firm enough.\n\nYou need a van. I will not carry it for you. Come and sit on it before you pay.\n\n${pickup(town, 'Sofa set')}`,
+    `3 piece sofa set. 5 seater in total (3+1+1). Grey fabric, clean, no broken legs. Cushions are firm.\n\nYou need a van. I will not carry it for you. Come and sit on it before you pay.\n\n${pickup(town, 'Sofa set')}`,
 
   'Dining table': (town) =>
-    `Wooden dining table with 4 chairs. Used at home. Table top has a few heat marks from pots, nothing broken.\n\nChairs are stable. Good for a small family. You pick it up, it will not fit in a hatchback easily.\n\n${pickup(town, 'Dining table')}`,
+    `Dining table with 4 chairs, still new. Light wood, seats a small family. I bought it for a flat then the plan changed.\n\nYou pick it up, it will not fit in a hatchback easily. Bring a van or a pick-up.\n\n${pickup(town, 'Dining table')}`,
 
   'Bed and mattress': (town) =>
     `Double bed with mattress, still new, plastic on the mattress. Wooden frame, slats included.\n\nI ordered two, one is extra. You can lie on it here. Bring a van or I help you find one in town.\n\n${pickup(town, 'Bed and mattress')}`,
 
-  'Wardrobe': (town) =>
-    `Wooden 2 door wardrobe, used. Hanging rail and one shelf inside. Doors close properly. A few scratches on the side from moving.\n\nEmpty, ready to go. You dismantle or take it as is, your choice.\n\n${pickup(town, 'Wardrobe')}`,
+  'Washing machine': (town) =>
+    `Front loader washing machine, new, still in the shop pack. 8kg. I bought it then we moved to a house with a different machine already there.\n\nYou can open it here. You need a plumber for the pipes, I will not fit it. Bring a van, it is heavy.\n\n${pickup(town, 'Washing machine')} Price is K4,800.`,
 
   'Office chair': (town) =>
     `Office chair, new. Swivel, has wheels, height adjusts. Good for a shop counter or home desk.\n\nStill in the pack from the hardware.\n\n${pickup(town, 'Office chair')}`,
@@ -169,8 +169,8 @@ const BASE_COPY = {
   '50kg maize': (town) =>
     `50kg maize grain, this season, from Eastern Province. Dry, not rotten. Good for pounding or taking to the hammer mill.\n\nYou bring your own empty bags if you want to split. Weighing here if you doubt the bag.\n\n${pickup(town, '50kg maize')} Price is for one 50kg bag.`,
 
-  'Tomatoes crate': (town) =>
-    `Crate of tomatoes, fresh from the field this week. Mix of ripe and half ripe so they last a few days.\n\nGood for a small grocery or the house. Come in the morning, they move fast.\n\n${pickup(town, 'Tomatoes crate')}`,
+  'Air fryer': (town) =>
+    `Philips air fryer, new. Good for chips, chicken and reheating without a lot of oil. I bought an extra one.\n\nBox and papers are there. You can plug it here and try.\n\n${pickup(town, 'Air fryer')} Price is K650.`,
 
   'Cooking oil 20L': (town) =>
     `20 litre cooking oil, sealed. Shop stock, not diluted. I bought a few for the business, one is extra.\n\nYou can check the seal here. Heavy — bring a car.\n\n${pickup(town, 'Cooking oil 20L')}`,
@@ -255,13 +255,13 @@ const EXTRA_COPY = {
     return `Toyota Noah, petrol, 7–8 seater family van. Mileage about ${km.toLocaleString('en-US')} km. Sliding doors work. Good for school runs and church.\n\nWhitebook there. Used by a family, not a taxi. A few interior marks from kids.\n\n${pickup(town, name)}`;
   },
   'Sofa 3 piece': (town, name) =>
-    `3 piece sofa (3+1+1), used in a sitting room. Fabric still decent, one small stain on the arm that I treated.\n\nCushions included. You bring a van. Sit on it before you pay so you are happy.\n\n${pickup(town, name)}`,
+    `3 piece sofa (3+1+1), new, still in wrap. Grey fabric. I ordered for a lodger then they brought their own.\n\nCushions included. You bring a van. Sit on it before you pay so you are happy.\n\n${pickup(town, name)}`,
   'Double bed': (town, name) =>
     `Double bed frame and mattress, used. Mattress still firm, I flipped it last month. Slats are complete.\n\nNo bedbugs — I treated the room. Come and see in daylight.\n\n${pickup(town, name)}`,
   'Wardrobe 2 door': (town, name) =>
     `2 door wardrobe, used. Hanging space and a shelf. Doors align. A scratch on the left door from a move.\n\nEmpty. You can take the shelves out to carry it down stairs.\n\n${pickup(town, name)}`,
   'Dining 4 chairs': (town, name) =>
-    `Dining table with 4 chairs, used. Wood, not plastic. Table is 4-seater size. One chair has a tighter joint than the others but it does not wobble badly.\n\n${pickup(town, name)} Bring a van or a pick-up.`,
+    `Dining table with 4 chairs, new. Light wood, 4-seater size. I bought it then we used the built-in kitchen table instead.\n\n${pickup(town, name)} Bring a van or a pick-up.`,
   'Football jersey': (town, name) =>
     `Football jersey, new, size L. Print not cracked. I sell a few teams — ask which one you want before you travel.\n\n${pickup(town, name)}`,
   'Ladies chitenge dress': (town, name) =>

@@ -23,6 +23,9 @@ function photoAllowed(url) {
     'walking_on_the', 'feet_on_the_seat', 'skinny_jeans', 'walk_in_the_snow',
     'bilbao_metro', 'alice_in_philcoland', 'berrit_arnold',
     'abandoned_tv', '1990s_television', '4_television', 'family_appliance',
+    'efta00001773', 'tomato', 'canap', 'josepinism', 'claw_foot',
+    'herter', 'antique_oak', 'antique_claw', '1963_frigidaire', 'hemingway',
+    'altes_schlafzimmer', 'museum',
   ];
   return !banned.some((tok) => name.includes(tok));
 }
@@ -49,6 +52,8 @@ const KIND_TO_POOL = {
   tv: 'tv',
   laptop: 'laptop',
   fridge: 'fridge',
+  washer: 'washer',
+  airfryer: 'airfryer',
   microwave: 'microwave',
   kettle: 'kettle',
   stove: 'stove',
@@ -177,9 +182,9 @@ const BASE_CATALOG = [
   ['Extension reel', 150, 'Electronics', 'reel', 'Mongu', 'New', 'Extension reel, 20 metres.'],
   ['Honda Fit', 110000, 'Cars', 'fit', 'Ndola', 'Pre-owned', 'Honda Fit. Small, easy on fuel.'],
   ['Sofa set', 2800, 'Furniture', 'sofa', 'Ndola', 'Pre-owned', 'Sofa set from the house. Used.'],
-  ['Dining table', 2000, 'Furniture', 'table', 'Lusaka', 'Pre-owned', 'Dining table with chairs. Used.'],
+  ['Dining table', 2000, 'Furniture', 'table', 'Lusaka', 'New', 'Dining table with chairs. New.'],
   ['Bed and mattress', 1800, 'Furniture', 'bed', 'Kitwe', 'New', 'Bed and mattress. Still new.'],
-  ['Wardrobe', 1400, 'Furniture', 'wardrobe', 'Livingstone', 'Pre-owned', 'Wooden wardrobe. Used.'],
+  ['Washing machine', 4800, 'Electronics', 'washer', 'Livingstone', 'New', 'Front loader washing machine. New.'],
   ['Office chair', 400, 'Furniture', 'office', 'Lusaka', 'New', 'Office chair.'],
   ['Coffee table', 500, 'Furniture', 'coffee', 'Kasama', 'Pre-owned', 'Small coffee table. Used.'],
   ['Kitchen unit', 3200, 'Furniture', 'kitchen', 'Ndola', 'New', 'Kitchen unit. Not fitted yet.'],
@@ -191,7 +196,7 @@ const BASE_CATALOG = [
   ['Chitenge wraps', 90, 'Clothing', 'dress', 'Mongu', 'New', 'Chitenge wraps. New.'],
   ['Work boots', 350, 'Clothing', 'shoes', 'Chingola', 'New', 'Work boots. New.'],
   ['Baby clothes pack', 80, 'Clothing', 'baby', 'Lusaka', 'New', 'Pack of baby clothes.'],
-  ['Tomatoes crate', 120, 'Produce', 'produce', 'Lusaka', 'New', 'Crate of tomatoes. Fresh.'],
+  ['Air fryer', 650, 'Electronics', 'airfryer', 'Lusaka', 'New', 'Philips air fryer. New in box.'],
   ['Cooking oil 20L', 650, 'Produce', 'oil', 'Ndola', 'New', '20 litre cooking oil.'],
   ['Charcoal bags', 90, 'Produce', 'charcoal', 'Kabwe', 'New', 'Small bags of charcoal.'],
   ['Plastic chairs x4', 200, 'Furniture', 'chairs', 'Ndola', 'New', 'Four plastic chairs. New.'],
@@ -212,9 +217,8 @@ function buildExtraSamples() {
     ['DSTV decoder', 450, 'Electronics', 'decoder', 'Pre-owned', 'DSTV decoder. Used.'],
     ['Tiger 1kVA generator', 3800, 'Electronics', 'generator', 'New', 'Small Tiger generator. For lights.'],
     ['Kettle', 180, 'Electronics', 'kettle', 'New', 'Electric kettle. New.'],
-    ['Sofa 3 piece', 2500, 'Furniture', 'sofa', 'Pre-owned', '3 piece sofa. Used.'],
-    ['Wardrobe 2 door', 1200, 'Furniture', 'wardrobe', 'Pre-owned', '2 door wardrobe. Used.'],
-    ['Dining 4 chairs', 1800, 'Furniture', 'table', 'Pre-owned', 'Dining table with 4 chairs.'],
+    ['Sofa 3 piece', 2500, 'Furniture', 'sofa', 'New', '3 piece sofa. New.'],
+    ['Dining 4 chairs', 1800, 'Furniture', 'table', 'New', 'Dining table with 4 chairs. New.'],
     ['Football jersey', 120, 'Clothing', 'jersey', 'New', 'Football jersey. New.'],
     ['Ladies chitenge dress', 150, 'Clothing', 'dress', 'New', 'Chitenge dress. New.'],
     ['Canvas sneakers', 200, 'Clothing', 'shoes', 'New', 'Canvas sneakers. Size 41.'],
@@ -427,7 +431,13 @@ async function seedLayoutSampleListings() {
       OR title LIKE 'iPhone 11%'
       OR title LIKE 'iPhone 12 — %'
       OR title LIKE 'iPhone 13 — %'
+      OR title = 'Tomatoes crate'
+      OR title LIKE 'Tomatoes%'
+      OR title = 'Wardrobe'
+      OR title LIKE 'Wardrobe %'
       OR photos::text ~* 'Log_Furniture_Queen_Bed'
+      OR photos::text ~* 'EFTA00001773'
+      OR photos::text ~* 'Tomato'
     )`;
   await pool.query(
     `DELETE FROM pool6.listing_watches
