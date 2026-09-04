@@ -111,37 +111,31 @@ const KIND_TO_POOL = {
   bike: 'bike',
 };
 
+const PHOTOS_PER_LISTING = 5;
+
 function assignUniquePhotos(rows) {
   const cursor = {};
-  const used = new Set();
-  const reuseAt = {};
 
-  function take(poolName) {
+  function takeMany(poolName, n) {
     const bucket = (PHOTO_POOLS[poolName] || []).filter(photoAllowed);
+    const fallback = (PHOTO_POOLS.tecno || []).filter(photoAllowed);
+    const src = bucket.length ? bucket : fallback;
+    if (!src.length) return [];
+    const out = [];
     let i = cursor[poolName] || 0;
-    while (i < bucket.length) {
-      const url = bucket[i];
+    for (let k = 0; k < n; k++) {
+      const url = src[i % src.length];
+      if (photoAllowed(url)) out.push(url);
       i += 1;
-      cursor[poolName] = i;
-      if (photoAllowed(url) && !used.has(url)) {
-        used.add(url);
-        return url;
-      }
     }
-    // Reuse the same kind of photo. Never give a car picture to mealie meal.
-    if (bucket.length) {
-      const r = reuseAt[poolName] || 0;
-      reuseAt[poolName] = r + 1;
-      return bucket[r % bucket.length];
-    }
-    const fallback = (PHOTO_POOLS[poolName] || []).filter(photoAllowed);
-    return fallback[0] || '';
+    cursor[poolName] = i;
+    return out.slice(0, n);
   }
 
   return rows.map((row) => {
     const copy = row.slice();
     const poolName = KIND_TO_POOL[row[3]] || row[3];
-    copy[3] = take(poolName);
+    copy[3] = takeMany(poolName, PHOTOS_PER_LISTING);
     return copy;
   });
 }
@@ -273,12 +267,31 @@ function catId(cats, name) {
   return row ? row.id : (cats[0] && cats[0].id) || null;
 }
 
-function photoFor(keyOrUrl) {
-  if (keyOrUrl && String(keyOrUrl).indexOf('http') === 0) {
-    return photoAllowed(keyOrUrl) ? keyOrUrl : ((PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '');
+function padPhotos(urls) {
+  const src = urls.filter(Boolean);
+  if (!src.length) return [];
+  const out = [];
+  while (out.length < PHOTOS_PER_LISTING) {
+    out.push(src[out.length % src.length]);
   }
-  const bucket = (PHOTO_POOLS.android || []).filter(photoAllowed);
-  return bucket[0] || (PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '';
+  return out.slice(0, PHOTOS_PER_LISTING);
+}
+
+function photoFor(keyOrUrl) {
+  const fallback = () => {
+    const bucket = (PHOTO_POOLS.android || []).filter(photoAllowed);
+    const one = bucket[0] || (PHOTO_POOLS.tecno && PHOTO_POOLS.tecno[0]) || '';
+    return padPhotos(one ? [one] : []);
+  };
+  if (Array.isArray(keyOrUrl)) {
+    const urls = [...new Set(keyOrUrl.filter((u) => photoAllowed(u)))];
+    if (!urls.length) return fallback();
+    return padPhotos(urls);
+  }
+  if (keyOrUrl && String(keyOrUrl).indexOf('http') === 0) {
+    return photoAllowed(keyOrUrl) ? padPhotos([keyOrUrl]) : fallback();
+  }
+  return fallback();
 }
 
 const SAMPLE_OWNER_PHONE = '0750076052';
@@ -342,7 +355,7 @@ function listingInsertParams(ownerId, cats, item, minutesAgo) {
     description,
     price,
     catId(cats, category),
-    [photoFor(photoKey)],
+    photoFor(photoKey),
     condition,
     place.lat,
     place.lng,
@@ -550,7 +563,7 @@ async function seedLayoutSampleListings() {
         description,
         price,
         catId(cats, category),
-        [photoFor(photoKey)],
+        photoFor(photoKey),
         condition,
         place.lat,
         place.lng,
