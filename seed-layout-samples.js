@@ -114,30 +114,37 @@ const KIND_TO_POOL = {
 const PHOTOS_PER_LISTING = 5;
 
 function assignUniquePhotos(rows) {
-  const cursor = {};
+  const restCursor = {};
+  const usedFirst = new Set();
 
   function takeMany(poolName, n) {
     const bucket = (PHOTO_POOLS[poolName] || []).filter(photoAllowed);
     const fallback = (PHOTO_POOLS.tecno || []).filter(photoAllowed);
     const src = bucket.length ? bucket : fallback;
-    if (!src.length) return [];
-    const out = [];
-    let i = cursor[poolName] || 0;
-    for (let k = 0; k < n; k++) {
-      const url = src[i % src.length];
-      if (photoAllowed(url)) out.push(url);
+    if (!src.length) return null;
+    const first = src.find((url) => !usedFirst.has(url));
+    if (!first) return null;
+    usedFirst.add(first);
+    const rest = src.filter((url) => url !== first);
+    const cycle = rest.length ? rest : src;
+    const out = [first];
+    let i = restCursor[poolName] || 0;
+    while (out.length < n) {
+      out.push(cycle[i % cycle.length]);
       i += 1;
     }
-    cursor[poolName] = i;
-    return out.slice(0, n);
+    restCursor[poolName] = i;
+    return out;
   }
 
-  return rows.map((row) => {
-    const copy = row.slice();
-    const poolName = KIND_TO_POOL[row[3]] || row[3];
-    copy[3] = takeMany(poolName, PHOTOS_PER_LISTING);
-    return copy;
-  });
+  return rows
+    .map((row) => {
+      const copy = row.slice();
+      const poolName = KIND_TO_POOL[row[3]] || row[3];
+      copy[3] = takeMany(poolName, PHOTOS_PER_LISTING);
+      return copy;
+    })
+    .filter((row) => Array.isArray(row[3]) && row[3].length === PHOTOS_PER_LISTING);
 }
 
 const TOWNS = {
@@ -510,6 +517,28 @@ async function seedLayoutSampleListings() {
           OR photos::text ~* 'Abandoned_TV|1990s_Television|4_TELEVISION|Family_Appliance'
         )`
   );
+
+  const catalogTitles = CATALOG.map((row) => row[0]);
+  const leftoverSample = `
+    is_layout_sample = true
+    AND NOT (title = ANY($1::text[]))`;
+  await pool.query(
+    `DELETE FROM pool6.listing_watches
+      WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${leftoverSample})`,
+    [catalogTitles]
+  ).catch(() => {});
+  await pool.query(
+    `DELETE FROM pool6.car_details
+      WHERE listing_id IN (SELECT id FROM pool6.listings WHERE ${leftoverSample})`,
+    [catalogTitles]
+  ).catch(() => {});
+  const pruned = await pool.query(
+    `DELETE FROM pool6.listings WHERE ${leftoverSample} RETURNING title`,
+    [catalogTitles]
+  );
+  if (pruned.rowCount) {
+    console.log(`Removed ${pruned.rowCount} sample listing(s) that reused the same photo.`);
+  }
 
   const owner = await findSampleOwner();
   if (!owner) {
